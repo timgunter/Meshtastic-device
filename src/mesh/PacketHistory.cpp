@@ -1,3 +1,5 @@
+#include <type_traits>
+
 #include "PacketHistory.h"
 #include "configuration.h"
 #include "mesh-pb-constants.h"
@@ -19,12 +21,14 @@ bool PacketHistory::wasSeenRecently(const MeshPacket *p, bool withUpdate)
     }
 
     uint32_t now = millis();
-    for (size_t i = 0; i < recentPackets.size();) {
-        PacketRecord &r = recentPackets[i];
+    // Not sure why the const_casts are necessary, I don't think they are required
+    // by the c++11 standard here. Compiler issue?
+    for(auto iter = const_cast<std::unordered_set<PacketRecord> &>(recentPackets).begin(); iter != recentPackets.end();) {
+        PacketRecord &r = const_cast<PacketRecord &>(*iter);
 
         if ((now - r.rxTimeMsec) >= FLOOD_EXPIRE_TIME) {
             // DEBUG_MSG("Deleting old broadcast record %d\n", i);
-            recentPackets.erase(recentPackets.begin() + i); // delete old record
+            iter = recentPackets.erase(iter); // delete old record
         } else {
             if (r.id == p->id && r.sender == p->from) {
                 DEBUG_MSG("Found existing packet record for fr=0x%x,to=0x%x,id=%d\n", p->from, p->to, p->id);
@@ -35,17 +39,13 @@ bool PacketHistory::wasSeenRecently(const MeshPacket *p, bool withUpdate)
                 return true;
             }
 
-            i++;
+            ++iter;
         }
     }
 
     // Didn't find an existing record, make one
     if (withUpdate) {
-        PacketRecord r;
-        r.id = p->id;
-        r.sender = p->from;
-        r.rxTimeMsec = now;
-        recentPackets.push_back(r);
+        recentPackets.emplace(p->from, p->id, now);
         printPacket("Adding packet record", p);
     }
 

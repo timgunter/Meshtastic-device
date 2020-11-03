@@ -4,6 +4,8 @@
 #include <queue>
 #include <unordered_set>
 
+#include "hash_combine.h"
+
 using namespace std;
 
 /// We clear our old flood record five minute after we see the last of it
@@ -13,18 +15,31 @@ using namespace std;
  * A record of a recent message broadcast
  */
 struct PacketRecord {
-    NodeNum sender;
-    PacketId id;
-    uint32_t rxTimeMsec; // Unix time in msecs - the time we received it
+    NodeNum sender = 0;
+    PacketId id = 0;
+    uint32_t rxTimeMsec = 0; // Unix time in msecs - the time we received it
+
+    PacketRecord(NodeNum const &sender_, PacketId const &id_, uint32_t const &rxTimeMsec_)
+    : sender(sender_)
+    , id(id_)
+    , rxTimeMsec(rxTimeMsec_)
+    {}
 
     bool operator==(const PacketRecord &p) const { return sender == p.sender && id == p.id; }
 };
 
-class PacketRecordHashFunction
+// std::hash<PacketRecord> template specialization
+namespace std
 {
-  public:
-    size_t operator()(const PacketRecord &p) const { return (hash<NodeNum>()(p.sender)) ^ (hash<PacketId>()(p.id)); }
-};
+    template<>
+    struct hash<PacketRecord>
+    {
+        size_t operator()(PacketRecord const &p) const
+        {
+            return make_hash(p.sender, p.id);
+        }
+    };
+} // namespace std
 
 /// Order packet records by arrival time, we want the oldest packets to be in the front of our heap
 class PacketRecordOrderFunction
@@ -54,9 +69,7 @@ class PacketHistory
     /** FIXME: really should be a std::unordered_set with the key being sender,id.
      * This would make checking packets in wasSeenRecently faster.
      */
-    vector<PacketRecord> recentPackets;
-    // priority_queue<PacketRecord, vector<PacketRecord>, PacketRecordOrderFunction> arrivalTimes;
-    // unordered_set<PacketRecord, PacketRecordHashFunction> recentPackets;
+    unordered_set<PacketRecord> recentPackets;
 
   public:
     PacketHistory();
