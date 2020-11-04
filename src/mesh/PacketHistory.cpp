@@ -20,13 +20,14 @@ bool PacketHistory::wasSeenRecently(const MeshPacket *p, bool withUpdate)
 
     uint32_t now = millis();
 
-    // Not sure why the const_cast is necessary; I don't think it's required
-    // by the c++11 standard here. Compiler issue?
-    // Adding an explicit "const_cast<PacketRecord &>(recentPackets).begin()" still
-    // needed the const_cast on the "... &r = *iter". Perhaps there's an issue
-    // w/ std::unordered_set<>::iterator?
     for(auto iter = recentPackets.begin(); iter != recentPackets.end();) {
+        // In this case, the const_cast is ok because we will only modify the "rxTimeMsec" member
+        // which doesn't change the hash for this element.
         PacketRecord &r = const_cast<PacketRecord &>(*iter);
+
+        // This assert statement can be used to confirm that we can safely modify "rxTimeMsec"
+        using PRHash = std::hash<PacketRecord>;
+        assert(PRHash()(r) == PRHash()(PacketRecord(r.sender, r.id, now)));
 
         if ((now - r.rxTimeMsec) >= FLOOD_EXPIRE_TIME) {
             // DEBUG_MSG("Deleting old broadcast record %d\n", i);
