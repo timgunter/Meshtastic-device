@@ -1,5 +1,3 @@
-#include <type_traits>
-
 #include "PacketHistory.h"
 #include "configuration.h"
 #include "mesh-pb-constants.h"
@@ -21,9 +19,13 @@ bool PacketHistory::wasSeenRecently(const MeshPacket *p, bool withUpdate)
     }
 
     uint32_t now = millis();
-    // Not sure why the const_casts are necessary, I don't think they are required
+
+    // Not sure why the const_cast is necessary; I don't think it's required
     // by the c++11 standard here. Compiler issue?
-    for(auto iter = const_cast<std::unordered_set<PacketRecord> &>(recentPackets).begin(); iter != recentPackets.end();) {
+    // Adding an explicit "const_cast<PacketRecord &>(recentPackets).begin()" still
+    // needed the const_cast on the "... &r = *iter". Perhaps there's an issue
+    // w/ std::unordered_set<>::iterator?
+    for(auto iter = recentPackets.begin(); iter != recentPackets.end();) {
         PacketRecord &r = const_cast<PacketRecord &>(*iter);
 
         if ((now - r.rxTimeMsec) >= FLOOD_EXPIRE_TIME) {
