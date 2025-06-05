@@ -968,6 +968,11 @@ bool AdminModule::handleSetModuleConfig(const meshtastic_ModuleConfig &c)
         moduleConfig.has_paxcounter = true;
         moduleConfig.paxcounter = c.payload_variant.paxcounter;
         break;
+    case meshtastic_ModuleConfig_direct_message_reply_tag:
+        LOG_INFO("Set module config: Direct Message Reply");
+        moduleConfig.has_direct_message_reply = true;
+        moduleConfig.direct_message_reply = c.payload_variant.direct_message_reply;
+        break;
     }
     saveChanges(SEGMENT_MODULECONFIG);
     return true;
@@ -1147,6 +1152,11 @@ void AdminModule::handleGetModuleConfig(const meshtastic_MeshPacket &req, const 
             LOG_INFO("Get module config: Paxcounter");
             res.get_module_config_response.which_payload_variant = meshtastic_ModuleConfig_paxcounter_tag;
             res.get_module_config_response.payload_variant.paxcounter = moduleConfig.paxcounter;
+            break;
+        case meshtastic_AdminMessage_ModuleConfigType_DIRECTMESSAGEREPLY_CONFIG:
+            LOG_INFO("Get module config: Direct Message Reply");
+            res.get_module_config_response.which_payload_variant = meshtastic_ModuleConfig_direct_message_reply_tag;
+            res.get_module_config_response.payload_variant.direct_message_reply = moduleConfig.direct_message_reply;
             break;
         }
 
