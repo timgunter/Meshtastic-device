@@ -225,6 +225,60 @@ typedef struct _meshtastic_ModuleConfig_PaxcounterConfig {
     int32_t ble_threshold;
 } meshtastic_ModuleConfig_PaxcounterConfig;
 
+/* Config for the DirectMessageReplyModule */
+typedef struct _meshtastic_ModuleConfig_DirectMessageReplyConfig {
+    /* Whether the DirectMessageReplyModule is enabled */
+    bool enabled;
+    /* The channel to use for the direct message reply
+ If net set to a secondary channel, the reply will
+ be sent as a direct message. */
+    uint32_t channel;
+    /* If true, add hop info to the reply message. */
+    bool send_hops;
+    /* If true, signal metrics will be sent with the reply message. */
+    bool send_signal_metrics;
+    /* If true, echo the message back in the reply. */
+    bool echo_message;
+    /* If true, echo the short user name back in the reply. */
+    bool echo_user;
+    /* "|" delimited list of potential received queries */
+    char queries[100];
+    /* "|" delimited list of responses to queries
+ The first response listed will be the one given if a received message
+ doesn't match one of the queries. Make an empty query with a '|'
+ character if you don't want a particular query to correspond to this
+ first value. */
+    char responses[200];
+} meshtastic_ModuleConfig_DirectMessageReplyConfig;
+
+typedef struct _meshtastic_ModuleConfig_PositionUpdateReplyConfig {
+    /* Whether the PositionUpdateReplyModule is enabled */
+    bool enabled;
+    /* If true, echo the short user name back in the reply. */
+    bool send_location;
+    /* If true, send the distance from the position update to the receiver. */
+    bool send_distance;
+    /* If true, send the bearing from the position update to the receiver.
+ This is a true compass bearing in degrees from 0 to 360. */
+    bool send_bearing;
+    /* If true, send the hops from the position update to the receiver.
+ This is the number of hops the position update has taken to reach the receiver. */
+    bool send_hops;
+    /* If true, send the signal metrics from the position update to the receiver.
+ This includes SNR, RSSI, and other signal quality metrics. */
+    bool send_signal_metrics;
+    /* If non-zero, use to convert magnetic bearing to true bearing(in degrees) */
+    float declination;
+    /* Code word to use to start position update tracking(default/if empty is "start") */
+    char start_code_word[16];
+    /* Optionl next codeword in sequence of nodes */
+    char next_code_word[16];
+    /* Name of next node in sequence */
+    char next_node[8];
+    /* Distance from node in meters to reveal next node info */
+    float next_node_distance;
+} meshtastic_ModuleConfig_PositionUpdateReplyConfig;
+
 /* Serial Config */
 typedef struct _meshtastic_ModuleConfig_SerialConfig {
     /* Preferences for the SerialModule */
@@ -455,6 +509,10 @@ typedef struct _meshtastic_ModuleConfig {
         meshtastic_ModuleConfig_DetectionSensorConfig detection_sensor;
         /* TODO: REPLACE */
         meshtastic_ModuleConfig_PaxcounterConfig paxcounter;
+        /* TODO: REPLACE */
+        meshtastic_ModuleConfig_DirectMessageReplyConfig direct_message_reply;
+        /* TODO: REPLACE */
+        meshtastic_ModuleConfig_PositionUpdateReplyConfig position_update_reply;
     } payload_variant;
 } meshtastic_ModuleConfig;
 
@@ -498,6 +556,8 @@ extern "C" {
 #define meshtastic_ModuleConfig_AudioConfig_bitrate_ENUMTYPE meshtastic_ModuleConfig_AudioConfig_Audio_Baud
 
 
+
+
 #define meshtastic_ModuleConfig_SerialConfig_baud_ENUMTYPE meshtastic_ModuleConfig_SerialConfig_Serial_Baud
 #define meshtastic_ModuleConfig_SerialConfig_mode_ENUMTYPE meshtastic_ModuleConfig_SerialConfig_Serial_Mode
 
@@ -522,6 +582,8 @@ extern "C" {
 #define meshtastic_ModuleConfig_DetectionSensorConfig_init_default {0, 0, 0, 0, "", 0, _meshtastic_ModuleConfig_DetectionSensorConfig_TriggerType_MIN, 0}
 #define meshtastic_ModuleConfig_AudioConfig_init_default {0, 0, _meshtastic_ModuleConfig_AudioConfig_Audio_Baud_MIN, 0, 0, 0, 0}
 #define meshtastic_ModuleConfig_PaxcounterConfig_init_default {0, 0, 0, 0}
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_init_default {0, 0, 0, 0, 0, 0, "", ""}
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_init_default {0, 0, 0, 0, 0, 0, 0, "", "", "", 0}
 #define meshtastic_ModuleConfig_SerialConfig_init_default {0, 0, 0, 0, _meshtastic_ModuleConfig_SerialConfig_Serial_Baud_MIN, 0, _meshtastic_ModuleConfig_SerialConfig_Serial_Mode_MIN, 0}
 #define meshtastic_ModuleConfig_ExternalNotificationConfig_init_default {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define meshtastic_ModuleConfig_StoreForwardConfig_init_default {0, 0, 0, 0, 0, 0}
@@ -538,6 +600,8 @@ extern "C" {
 #define meshtastic_ModuleConfig_DetectionSensorConfig_init_zero {0, 0, 0, 0, "", 0, _meshtastic_ModuleConfig_DetectionSensorConfig_TriggerType_MIN, 0}
 #define meshtastic_ModuleConfig_AudioConfig_init_zero {0, 0, _meshtastic_ModuleConfig_AudioConfig_Audio_Baud_MIN, 0, 0, 0, 0}
 #define meshtastic_ModuleConfig_PaxcounterConfig_init_zero {0, 0, 0, 0}
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_init_zero {0, 0, 0, 0, 0, 0, "", ""}
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_init_zero {0, 0, 0, 0, 0, 0, 0, "", "", "", 0}
 #define meshtastic_ModuleConfig_SerialConfig_init_zero {0, 0, 0, 0, _meshtastic_ModuleConfig_SerialConfig_Serial_Baud_MIN, 0, _meshtastic_ModuleConfig_SerialConfig_Serial_Mode_MIN, 0}
 #define meshtastic_ModuleConfig_ExternalNotificationConfig_init_zero {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define meshtastic_ModuleConfig_StoreForwardConfig_init_zero {0, 0, 0, 0, 0, 0}
@@ -584,6 +648,25 @@ extern "C" {
 #define meshtastic_ModuleConfig_PaxcounterConfig_paxcounter_update_interval_tag 2
 #define meshtastic_ModuleConfig_PaxcounterConfig_wifi_threshold_tag 3
 #define meshtastic_ModuleConfig_PaxcounterConfig_ble_threshold_tag 4
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_enabled_tag 1
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_channel_tag 2
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_send_hops_tag 3
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_send_signal_metrics_tag 4
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_echo_message_tag 5
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_echo_user_tag 6
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_queries_tag 7
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_responses_tag 8
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_enabled_tag 1
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_send_location_tag 2
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_send_distance_tag 3
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_send_bearing_tag 4
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_send_hops_tag 5
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_send_signal_metrics_tag 6
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_declination_tag 7
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_start_code_word_tag 8
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_next_code_word_tag 9
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_next_node_tag 10
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_next_node_distance_tag 11
 #define meshtastic_ModuleConfig_SerialConfig_enabled_tag 1
 #define meshtastic_ModuleConfig_SerialConfig_echo_tag 2
 #define meshtastic_ModuleConfig_SerialConfig_rxd_tag 3
@@ -666,6 +749,8 @@ extern "C" {
 #define meshtastic_ModuleConfig_ambient_lighting_tag 11
 #define meshtastic_ModuleConfig_detection_sensor_tag 12
 #define meshtastic_ModuleConfig_paxcounter_tag   13
+#define meshtastic_ModuleConfig_direct_message_reply_tag 14
+#define meshtastic_ModuleConfig_position_update_reply_tag 15
 
 /* Struct field encoding specification for nanopb */
 #define meshtastic_ModuleConfig_FIELDLIST(X, a) \
@@ -681,7 +766,9 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,remote_hardware,payload_vari
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,neighbor_info,payload_variant.neighbor_info),  10) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,ambient_lighting,payload_variant.ambient_lighting),  11) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,detection_sensor,payload_variant.detection_sensor),  12) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,paxcounter,payload_variant.paxcounter),  13)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,paxcounter,payload_variant.paxcounter),  13) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,direct_message_reply,payload_variant.direct_message_reply),  14) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,position_update_reply,payload_variant.position_update_reply),  15)
 #define meshtastic_ModuleConfig_CALLBACK NULL
 #define meshtastic_ModuleConfig_DEFAULT NULL
 #define meshtastic_ModuleConfig_payload_variant_mqtt_MSGTYPE meshtastic_ModuleConfig_MQTTConfig
@@ -697,6 +784,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,paxcounter,payload_variant.p
 #define meshtastic_ModuleConfig_payload_variant_ambient_lighting_MSGTYPE meshtastic_ModuleConfig_AmbientLightingConfig
 #define meshtastic_ModuleConfig_payload_variant_detection_sensor_MSGTYPE meshtastic_ModuleConfig_DetectionSensorConfig
 #define meshtastic_ModuleConfig_payload_variant_paxcounter_MSGTYPE meshtastic_ModuleConfig_PaxcounterConfig
+#define meshtastic_ModuleConfig_payload_variant_direct_message_reply_MSGTYPE meshtastic_ModuleConfig_DirectMessageReplyConfig
+#define meshtastic_ModuleConfig_payload_variant_position_update_reply_MSGTYPE meshtastic_ModuleConfig_PositionUpdateReplyConfig
 
 #define meshtastic_ModuleConfig_MQTTConfig_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled,           1) \
@@ -766,6 +855,33 @@ X(a, STATIC,   SINGULAR, INT32,    wifi_threshold,    3) \
 X(a, STATIC,   SINGULAR, INT32,    ble_threshold,     4)
 #define meshtastic_ModuleConfig_PaxcounterConfig_CALLBACK NULL
 #define meshtastic_ModuleConfig_PaxcounterConfig_DEFAULT NULL
+
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     enabled,           1) \
+X(a, STATIC,   SINGULAR, UINT32,   channel,           2) \
+X(a, STATIC,   SINGULAR, BOOL,     send_hops,         3) \
+X(a, STATIC,   SINGULAR, BOOL,     send_signal_metrics,   4) \
+X(a, STATIC,   SINGULAR, BOOL,     echo_message,      5) \
+X(a, STATIC,   SINGULAR, BOOL,     echo_user,         6) \
+X(a, STATIC,   SINGULAR, STRING,   queries,           7) \
+X(a, STATIC,   SINGULAR, STRING,   responses,         8)
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_CALLBACK NULL
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_DEFAULT NULL
+
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     enabled,           1) \
+X(a, STATIC,   SINGULAR, BOOL,     send_location,     2) \
+X(a, STATIC,   SINGULAR, BOOL,     send_distance,     3) \
+X(a, STATIC,   SINGULAR, BOOL,     send_bearing,      4) \
+X(a, STATIC,   SINGULAR, BOOL,     send_hops,         5) \
+X(a, STATIC,   SINGULAR, BOOL,     send_signal_metrics,   6) \
+X(a, STATIC,   SINGULAR, FLOAT,    declination,       7) \
+X(a, STATIC,   SINGULAR, STRING,   start_code_word,   8) \
+X(a, STATIC,   SINGULAR, STRING,   next_code_word,    9) \
+X(a, STATIC,   SINGULAR, STRING,   next_node,        10) \
+X(a, STATIC,   SINGULAR, FLOAT,    next_node_distance,  11)
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_CALLBACK NULL
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_DEFAULT NULL
 
 #define meshtastic_ModuleConfig_SerialConfig_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled,           1) \
@@ -873,6 +989,8 @@ extern const pb_msgdesc_t meshtastic_ModuleConfig_NeighborInfoConfig_msg;
 extern const pb_msgdesc_t meshtastic_ModuleConfig_DetectionSensorConfig_msg;
 extern const pb_msgdesc_t meshtastic_ModuleConfig_AudioConfig_msg;
 extern const pb_msgdesc_t meshtastic_ModuleConfig_PaxcounterConfig_msg;
+extern const pb_msgdesc_t meshtastic_ModuleConfig_DirectMessageReplyConfig_msg;
+extern const pb_msgdesc_t meshtastic_ModuleConfig_PositionUpdateReplyConfig_msg;
 extern const pb_msgdesc_t meshtastic_ModuleConfig_SerialConfig_msg;
 extern const pb_msgdesc_t meshtastic_ModuleConfig_ExternalNotificationConfig_msg;
 extern const pb_msgdesc_t meshtastic_ModuleConfig_StoreForwardConfig_msg;
@@ -891,6 +1009,8 @@ extern const pb_msgdesc_t meshtastic_RemoteHardwarePin_msg;
 #define meshtastic_ModuleConfig_DetectionSensorConfig_fields &meshtastic_ModuleConfig_DetectionSensorConfig_msg
 #define meshtastic_ModuleConfig_AudioConfig_fields &meshtastic_ModuleConfig_AudioConfig_msg
 #define meshtastic_ModuleConfig_PaxcounterConfig_fields &meshtastic_ModuleConfig_PaxcounterConfig_msg
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_fields &meshtastic_ModuleConfig_DirectMessageReplyConfig_msg
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_fields &meshtastic_ModuleConfig_PositionUpdateReplyConfig_msg
 #define meshtastic_ModuleConfig_SerialConfig_fields &meshtastic_ModuleConfig_SerialConfig_msg
 #define meshtastic_ModuleConfig_ExternalNotificationConfig_fields &meshtastic_ModuleConfig_ExternalNotificationConfig_msg
 #define meshtastic_ModuleConfig_StoreForwardConfig_fields &meshtastic_ModuleConfig_StoreForwardConfig_msg
@@ -906,17 +1026,19 @@ extern const pb_msgdesc_t meshtastic_RemoteHardwarePin_msg;
 #define meshtastic_ModuleConfig_AudioConfig_size 19
 #define meshtastic_ModuleConfig_CannedMessageConfig_size 49
 #define meshtastic_ModuleConfig_DetectionSensorConfig_size 44
+#define meshtastic_ModuleConfig_DirectMessageReplyConfig_size 319
 #define meshtastic_ModuleConfig_ExternalNotificationConfig_size 42
 #define meshtastic_ModuleConfig_MQTTConfig_size  224
 #define meshtastic_ModuleConfig_MapReportSettings_size 14
 #define meshtastic_ModuleConfig_NeighborInfoConfig_size 10
 #define meshtastic_ModuleConfig_PaxcounterConfig_size 30
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_size 65
 #define meshtastic_ModuleConfig_RangeTestConfig_size 12
 #define meshtastic_ModuleConfig_RemoteHardwareConfig_size 96
 #define meshtastic_ModuleConfig_SerialConfig_size 28
 #define meshtastic_ModuleConfig_StoreForwardConfig_size 24
 #define meshtastic_ModuleConfig_TelemetryConfig_size 48
-#define meshtastic_ModuleConfig_size             227
+#define meshtastic_ModuleConfig_size             322
 #define meshtastic_RemoteHardwarePin_size        21
 
 #ifdef __cplusplus
