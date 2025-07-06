@@ -104,8 +104,8 @@ class GeoCoord
     static double toDegrees(double r);
 
     // Point to point conversions
-    int32_t distanceTo(const GeoCoord &pointB);
-    int32_t bearingTo(const GeoCoord &pointB);
+    float distanceTo(const GeoCoord &pointB);
+    float bearingTo(const GeoCoord &pointB);
     std::shared_ptr<GeoCoord> pointAtDistance(double bearing, double range);
 
     // Lat lon alt getters
