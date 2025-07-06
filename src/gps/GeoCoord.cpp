@@ -453,14 +453,14 @@ float GeoCoord::rangeRadiansToMeters(double range_radians)
 }
 
 // Find distance from point to passed in point
-int32_t GeoCoord::distanceTo(const GeoCoord &pointB)
+float GeoCoord::distanceTo(const GeoCoord &pointB)
 {
     return latLongToMeter(this->getLatitude() * 1e-7, this->getLongitude() * 1e-7, pointB.getLatitude() * 1e-7,
                           pointB.getLongitude() * 1e-7);
 }
 
 // Find bearing from point to passed in point
-int32_t GeoCoord::bearingTo(const GeoCoord &pointB)
+float GeoCoord::bearingTo(const GeoCoord &pointB)
 {
     return bearing(this->getLatitude() * 1e-7, this->getLongitude() * 1e-7, pointB.getLatitude() * 1e-7,
                    pointB.getLongitude() * 1e-7);
