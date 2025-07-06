@@ -1015,6 +1015,11 @@ bool AdminModule::handleSetModuleConfig(const meshtastic_ModuleConfig &c)
         moduleConfig.has_direct_message_reply = true;
         moduleConfig.direct_message_reply = c.payload_variant.direct_message_reply;
         break;
+    case meshtastic_ModuleConfig_position_update_reply_tag:
+        LOG_INFO("Set module config: Position Update Reply");
+        moduleConfig.has_position_update_reply = true;
+        moduleConfig.position_update_reply = c.payload_variant.position_update_reply;
+        break;
     }
     saveChanges(SEGMENT_MODULECONFIG, shouldReboot);
     return true;
@@ -1204,6 +1209,11 @@ void AdminModule::handleGetModuleConfig(const meshtastic_MeshPacket &req, const 
             LOG_INFO("Get module config: Direct Message Reply");
             res.get_module_config_response.which_payload_variant = meshtastic_ModuleConfig_direct_message_reply_tag;
             res.get_module_config_response.payload_variant.direct_message_reply = moduleConfig.direct_message_reply;
+            break;
+        case meshtastic_AdminMessage_ModuleConfigType_POSITIONUPDATEREPLY_CONFIG:
+            LOG_INFO("Get module config: Position Update Reply");
+            res.get_module_config_response.which_payload_variant = meshtastic_ModuleConfig_position_update_reply_tag;
+            res.get_module_config_response.payload_variant.position_update_reply = moduleConfig.position_update_reply;
             break;
         }
 

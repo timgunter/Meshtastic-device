@@ -98,6 +98,10 @@
 #include "modules/DirectMessageReplyModule.h"
 #endif
 
+#if !MESHTASTIC_EXCLUDE_POSITIONUPDATEREPLY
+#include "modules/PositionUpdateReplyModule.h"
+#endif
+
 #if !MESHTASTIC_EXCLUDE_DROPZONE
 #include "modules/DropzoneModule.h"
 #endif
@@ -163,6 +167,9 @@ void setupModules()
 #endif
 #if !MESHTASTIC_EXCLUDE_DIRECTMESSAGEREPLY
         DirectMessageReplyModule::getInstance();
+#endif
+#if !MESHTASTIC_EXCLUDE_POSITIONUPDATEREPLY
+        PositionUpdateReplyModule::getInstance();
 #endif
 #if !MESHTASTIC_EXCLUDE_DROPZONE
     dropzoneModule = new DropzoneModule();
