@@ -274,7 +274,7 @@ typedef struct _meshtastic_ModuleConfig_PositionUpdateReplyConfig {
     /* Optionl next codeword in sequence of nodes */
     char next_code_word[16];
     /* Name of next node in sequence */
-    char next_node[8];
+    char next_node[16];
     /* Distance from node in meters to reveal next node info */
     float next_node_distance;
 } meshtastic_ModuleConfig_PositionUpdateReplyConfig;
@@ -1032,7 +1032,7 @@ extern const pb_msgdesc_t meshtastic_RemoteHardwarePin_msg;
 #define meshtastic_ModuleConfig_MapReportSettings_size 14
 #define meshtastic_ModuleConfig_NeighborInfoConfig_size 10
 #define meshtastic_ModuleConfig_PaxcounterConfig_size 30
-#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_size 65
+#define meshtastic_ModuleConfig_PositionUpdateReplyConfig_size 73
 #define meshtastic_ModuleConfig_RangeTestConfig_size 12
 #define meshtastic_ModuleConfig_RemoteHardwareConfig_size 96
 #define meshtastic_ModuleConfig_SerialConfig_size 28
