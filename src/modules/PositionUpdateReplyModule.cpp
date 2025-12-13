@@ -219,6 +219,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     bool const haveLoc         = (local.getLatitude() != 0 || local.getLongitude() != 0 || local.getAltitude() != 0);
     auto const remotePrecision = precisionBitsToMeters(pos.precision_bits);
     auto const distance        = remote.distanceTo(local);
+    auto const height          = local.getAltitude() - remote.getAltitude();
     auto const declination     = config.declination;
     bool const haveDecl        = (declination != 0.f);
     auto const trueBearing     = normalizeBearing((180.f / M_PI) * remote.bearingTo(local));
@@ -256,32 +257,33 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     }
 
     /// Received GPS info
-    addToResponseIf(true, getNodeShortName(source) + ": " + toStringPrecision(1, remotePrecision) + "m precision bits: " + std::to_string(pos.precision_bits), "\n");
     addToResponseIf(true, getNodeShortName(source) + ": " + geoCoordToString(remote, remoteSats), "\n");
+    addToResponseIf(true,                        "Prec: " + toStringPrecision(1, remotePrecision) + "m bits: " + std::to_string(pos.precision_bits), "\n");
 
     /// Local GPS info + distance and bearing between remote and local
     if(!haveLoc) {
         bool const needLoc = (config.send_location || config.send_distance || config.send_bearing);
         addToResponseIf(needLoc, getNodeShortName() + ": " + "LLA not available", "\n");
     } else {
-        addToResponseIf(config.send_location, getNodeShortName() + ": " + geoCoordToString(local, localSats), "\n");
-        addToResponseIf(config.send_distance,            "Distance:     " + toStringPrecision(1, distance) + "m","\n");
-        addToResponseIf(config.send_bearing,             "True bearing: " + toStringPrecision(1, trueBearing), "\n");
-        addToResponseIf(config.send_bearing && haveDecl, "Magnetic:     " + toStringPrecision(1, magBearing ), "\n");
-        addToResponseIf(config.send_bearing && haveDecl, "Declination:  " + toStringPrecision(1, declination), "\n");
+        addToResponseIf(config.send_location, getNodeShortName() + ":  " + geoCoordToString(local, localSats), "\n");
+        addToResponseIf(config.send_distance,            "Dist: "   + toStringPrecision(1, distance) + "m","\n");
+        addToResponseIf(config.send_distance,            "Height: " + toStringPrecision(1, height  ) + "m","\n");
+        addToResponseIf(config.send_bearing,             "True: "   + toStringPrecision(1, trueBearing), "\n");
+        addToResponseIf(config.send_bearing && haveDecl, "Mag: "    + toStringPrecision(1, magBearing ), "\n");
+        addToResponseIf(config.send_bearing && haveDecl, "Decl: "   + toStringPrecision(1, declination), "\n");
     }
 
     /// Mesh packet and signal metrics
-    addToResponseIf(config.send_hops,           "Hop lim: " + std::to_string(mp.hop_limit) + "/" + std::to_string(mp.hop_start), "\n");
-    addToResponseIf(config.send_signal_metrics, "SNR: " + toStringPrecision(1, mp.rx_snr)); // + " dB";
+    addToResponseIf(config.send_hops,           "Hops: " + std::to_string(mp.hop_start) + "/" + std::to_string(mp.hop_limit), "\n");
+    addToResponseIf(config.send_signal_metrics, "SNR: "  + toStringPrecision(1, mp.rx_snr)); // + " dB";
     addToResponseIf(config.send_signal_metrics, "RSSI: " + std::to_string(mp.rx_rssi));     // + " dBm";
 
     /// If set, reveal info about next node in sequence
     if(distance <= nextNodeDist) {
         if(remotePrecision > nextNodeDist) {
-            addToResponseIf(haveNextNode, "Unable to reveal next node due to bad precision", "\n");
+            addToResponseIf(haveNextNode, "Unable to reveal clue due to bad precision", "\n");
         } else {
-            addToResponseIf(!nextNode.empty(),     "Next node:     " + nextNode,     "\n");
+            addToResponseIf(!nextNode.empty(),     "Next node: " + nextNode,     "\n");
             addToResponseIf(!nextCodeWord.empty(), "Next codeword: " + nextCodeWord, "\n");
         }
     }
