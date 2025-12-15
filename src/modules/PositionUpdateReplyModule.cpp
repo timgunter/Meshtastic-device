@@ -16,6 +16,15 @@
 #include "GeoCoord.h"
 #include "MeshService.h"
 
+#include "DirectMessageReplyModule.h" // For reply_utils::... functions
+
+using namespace reply_utils;
+
+/// The config.next_node and config.next_code_word can contain either a single
+/// next node/code word pair, or a '|' delimited list of nodes. If more than one
+/// pair is set, the address of the sender will be used to determine which pair
+/// is sent in the reply. This is intended to be used so that multiple different
+/// "courses" of nodes can be setup concurrently.
 PositionUpdateReplyModule::ConfigType PositionUpdateReplyModule::getDefaultConfig() {
     ConfigType config;
 
@@ -52,6 +61,10 @@ void PositionUpdateReplyModule::setDefault() {
     moduleConfig.position_update_reply = getDefaultConfig();
 }
 
+bool PositionUpdateReplyModule::hasNextNode(ConfigType const &config) {
+    return !std::string(config.next_node).empty() || !std::string(config.next_code_word).empty();
+}
+
 PositionUpdateReplyModule::PositionUpdateReplyModule()
 : MultiPortModule(
         "positionupdatereply"
@@ -64,37 +77,6 @@ PositionUpdateReplyModule::PositionUpdateReplyModule()
 }
 
 namespace {
-    bool equalIgnoreCase(std::string const &left, std::string const &right) {
-        if(left.size() != right.size())
-            return false;
-        return std::equal(left.begin(), left.end(), right.begin()
-            , [](char const l, char const r) {
-                return std::tolower(l) == std::tolower(r);
-        });
-    }
-
-    // Convert float to string with specified precision
-    std::string toStringPrecision(int const precision, float const value) {
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(precision) << value;
-        return oss.str();
-    };
-
-    // Copy a string into the payload, ensuring it does not exceed the payload size
-    void copyStringToPayload(meshtastic_Data_payload_t &payload, std::string const &str) {
-        payload.size = std::min(str.size(), sizeof(payload.bytes));
-        std::memcpy(payload.bytes, str.c_str(), payload.size);
-        assert(payload.size <= sizeof(payload.bytes));
-    };
-
-    std::string getNodeShortName(uint32_t const nodeNum = nodeDB->getNodeNum()) {
-        auto const *node = nodeDB->getMeshNode(nodeNum);
-        if (node && node->has_user) {
-            return node->user.short_name;
-        }
-        return "Unk";
-    }
-
     float precisionBitsToMeters(int const bits) {
         if(bits == 0.f) {
             return 0.f; // No precision, return 0
@@ -136,8 +118,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(const meshta
 
     std::string const startCodeWord = (0 == strnlen(config.start_code_word, sizeof(config.start_code_word)) ? "start" : config.start_code_word);
     bool        const isCodeWord    = !equalIgnoreCase(startCodeWord, "start");
-    std::string const nextCodeWord  = config.next_code_word;
-    std::string const nextNode      = config.next_node;
+    bool        const haveNextNode  = hasNextNode(config);
 
     if(equalIgnoreCase(message, startCodeWord)) {
         LOG_DEBUG("Starting monitoring node: %u", source);
@@ -149,7 +130,7 @@ Will respond to regular updates, "exchange position", or "request position" requ
 Send "stop" to disable.)"
         );
 
-        if(!nextNode.empty() || !nextCodeWord.empty()) {
+        if(haveNextNode) {
             sendReply(mp, "To receive clues about the next node, send a position update from within "
                 + toStringPrecision(1, config.next_node_distance) + "m of this node."
             );
@@ -171,7 +152,7 @@ Send "stop" to disable.)"
                              +  (trackingSender ? " including \"" : " not including \"") + getNodeShortName(source) + "\"";
 
         /// Add next node distance if next node info set
-        if(!nextNode.empty() || nextCodeWord.empty()) {
+        if(haveNextNode) {
             response += "\nNext node distance: " + toStringPrecision(1, config.next_node_distance);
         }
 
@@ -244,10 +225,8 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     };
 
     /// Next node info
-    auto        const &nextNodeDist = config.next_node_distance;
-    std::string const  nextNode     = config.next_node;
-    std::string const  nextCodeWord = config.next_code_word;
-    bool        const  haveNextNode = (!nextNode.empty() || !nextCodeWord.empty());
+    auto const &nextNodeDist = config.next_node_distance;
+    bool const  haveNextNode = hasNextNode(config);
 
     /// If next node, and position is manually set, reject!
     if(haveNextNode && pos.location_source == meshtastic_Position_LocSource_LOC_MANUAL) {
@@ -283,7 +262,20 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
         if(remotePrecision > nextNodeDist) {
             addToResponseIf(haveNextNode, "Unable to reveal clue due to bad precision", "\n");
         } else {
-            addToResponseIf(!nextNode.empty(),     "Next node: " + nextNode,     "\n");
+            std::string nextNode     = config.next_node;
+            std::string nextCodeWord = config.next_code_word;
+
+            auto numNodes     = getNumValues(config.next_node);
+            auto numCodeWords = getNumValues(config.next_code_word);
+
+            if(numNodes > 0 && numCodeWords > 0 && numNodes != numCodeWords) {
+                LOG_WARN("PositionUpdateReplyModule: next_node has %zu entries, but next_code_word has %zu entries!", numNodes, numCodeWords);
+            }
+
+            if(numNodes     > 1) getIthValue(config.next_node,      nextNode,     (source % numNodes));
+            if(numCodeWords > 1) getIthValue(config.next_code_word, nextCodeWord, (source % numCodeWords));
+
+            addToResponseIf(!nextNode.empty(),     "Next node: "     + nextNode,     "\n");
             addToResponseIf(!nextCodeWord.empty(), "Next codeword: " + nextCodeWord, "\n");
         }
     }
