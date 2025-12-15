@@ -15,6 +15,26 @@
 #include "configuration.h"
 #include "main.h"
 
+using namespace reply_utils;
+
+/// This module automatically replies to direct messages with pre-configured responses.
+/// These responses can be configured so that different responses will be provided based
+/// upon different "queries" in the received direct message.
+/// Other options allow the response to contain other info like signal metrics, hop info, etc.
+///
+/// The config.queries and config.responses are '|' delimited lists of queries and responses.
+/// If either queries or responses is empty, they are consider to contain zero entries.
+/// Matching of queries to messages is case-insensitive. Queries and responses can be configured
+/// as follows.
+///
+/// nqueries == 0 && nresponses == 0        => no custom message will be added to the response
+/// nqueries == 0 && nresponses == 1        => always use the single response
+/// nqueries == 1 && nresponses == 1        => if message matches query, use the single response
+/// nqueries == 0 && nresponses >  1        => use (source_address % nresponses) to select response
+/// nqueries == 1 && nresponses >  1        => if message matches query, use (source_address % nresponses)th response
+/// nqueries >  1 && nresponses == nqueries => if message matches nth query, use nth response
+/// nqueries >  1 && nresponses >  nqueries => same as above, but extra responses are ignored
+
 DirectMessageReplyModule::ConfigType DirectMessageReplyModule::getDefaultConfig() {
     ConfigType config;
 
@@ -30,104 +50,6 @@ DirectMessageReplyModule::ConfigType DirectMessageReplyModule::getDefaultConfig(
 
     return config;
 }
-
-namespace {
-    // Convert float to string with specified precision
-    std::string toStringPrecision(int const precision, float const value) {
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(precision) << value;
-        return oss.str();
-    }
-
-    // Copy a string into the payload, ensuring it does not exceed the payload size
-    void copyStringToPayload(meshtastic_Data_payload_t &payload, std::string const &str) {
-        payload.size = std::min(str.size(), sizeof(payload.bytes));
-        std::memcpy(payload.bytes, str.c_str(), payload.size);
-        assert(payload.size <= sizeof(payload.bytes));
-    }
-
-    bool isPrivateChannel(ChannelIndex const channel) {
-        auto const &info = channels.getByIndex(channel);
-        if (info.role == meshtastic_Channel_Role_DISABLED) {
-            return false;
-        }
-        if (!info.has_settings) {
-            return false;
-        }
-        if (info.settings.psk.size <= 16) {
-            return false;
-        }
-        return true;
-    }
-
-    std::string getNodeShortName(uint32_t const nodeNum = nodeDB->getNodeNum()) {
-        auto const *node = nodeDB->getMeshNode(nodeNum);
-        if (node && node->has_user) {
-            return node->user.short_name;
-        }
-        return "Unk"; // Return nullptr if no short name is available
-    }
-
-    bool equalIgnoreCase(std::string const &left, std::string const &right) {
-        if(left.size() != right.size())
-            return false;
-        return std::equal(left.begin(), left.end(), right.begin()
-            , [](char const l, char const r) {
-                return std::tolower(l) == std::tolower(r);
-        });
-    }
-
-    /// Get substring using start and end positions(instead of start and length)
-    std::string startToEnd(std::string const &str, std::string::size_type const start, std::string::size_type const end) {
-        if(end == std::string::npos) return str.substr(start);
-        if(end < start)              return {};
-        else                         return str.substr(start, end - start);
-    }
-
-    bool atEnd(std::string::size_type const pos) {
-        return pos == std::string::npos;
-    }
-
-    /// Set start to current end, and increment past delimiter
-    void setStart(std::string::size_type &start, std::string::size_type const end) {
-        start = end;
-        if(atEnd(start)) return;
-        ++start; // Delimiter is single character
-    }
-
-    /// Search a delimited string of values for a particular value. "i" is 0-based index to value if found
-    bool findMatch(std::string const &values, std::string const &value, size_t &I, char const delim = '|') {
-        std::string::size_type start = 0;
-        std::string::size_type end   = 0;
-        for(size_t i = 0; i < values.size() && !atEnd(start); ++i, setStart(start, end)) {
-            end = values.find(delim, start);
-
-            if(equalIgnoreCase(value, startToEnd(values, start, end))) {
-                I = i;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// Retrieve Ith(0-based) value from a delimited list of values
-    bool getIthValue(std::string const &values, std::string &value, size_t const I, char const delim = '|') {
-	size_t i = 0;
-        std::string::size_type start = 0;
-        std::string::size_type end   = 0;
-        for(i = 0; i <= I && !atEnd(start); ++i, setStart(start, end)) {
-            end = values.find(delim, start);
-
-            if(i == I) {
-                value = startToEnd(values, start, end);
-                return true;
-            }
-        }
-
-        return false;
-    }
-} // namespace anonymous
 
 void DirectMessageReplyModule::setDefault() {
     moduleConfig.direct_message_reply = getDefaultConfig();
@@ -154,7 +76,6 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
         LOG_DEBUG("Skipping reply to message ID %u from %u", p.reply_id, source);
         return ProcessMessage::CONTINUE;
     }
-
 
     if (dest != myID) {
         LOG_DEBUG("Ignoring message not for us(%u) decoded dest: %u packet dest: %u", myID, p.dest, mp.to);
@@ -184,10 +105,32 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
     size_t i = 0;
     std::string responseMsg;
 
-    if(findMatch(  config.queries,   message,     i)) {
-       getIthValue(config.responses, responseMsg, i);
-    } else {
-       getIthValue(config.responses, responseMsg, 0);
+    auto const numQueries   = getNumValues(config.queries);
+    auto const numResponses = getNumValues(config.responses);
+
+    if(numQueries > 1 && numQueries != numResponses) {
+        LOG_WARN("DirectMessageReplyModule: number of queries (%zu) is > 1 and does not match number of responses (%zu)", numQueries, numResponses);
+    }
+
+    // If there are no queries, or only one query and it matches the message
+    if(numQueries == 0 || (numQueries == 1 && equalIgnoreCase(message, config.queries))) {
+        if(numResponses <= 1)
+            getIthValue(config.responses, responseMsg, 0);
+        else { // 0 or 1 queries and multiple responses; choose response based on source address
+            getIthValue(config.responses, responseMsg, (source % numResponses));
+        }
+    } else if(numQueries > 1) {
+        // If more than 1 query, see if any match the message, and use corresponding response
+        if(findMatch(config.queries, message, i)) {
+            if(i < numResponses) {
+                getIthValue(config.responses, responseMsg, i);
+            } else {
+                LOG_ERROR("DirectMessageReplyModule: matched query index %zu has no corresponding response (only %zu responses) falling a back to 0", i, numResponses);
+                responseMsg = "Invalid DirectMessageReplyModule configuration";
+            }
+        } else { // Otherwise, use the first response
+            getIthValue(config.responses, responseMsg, 0);
+        }
     }
 
     addToResponse(responseMsg);
@@ -229,3 +172,107 @@ void DirectMessageReplyModule::sendReply(
 
     service->sendToMesh(reply, RX_SRC_LOCAL);
 }
+
+namespace reply_utils {
+    // Convert float to string with specified precision
+    std::string toStringPrecision(int const precision, float const value) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(precision) << value;
+        return oss.str();
+    }
+
+    // Copy a string into the payload, ensuring it does not exceed the payload size
+    void copyStringToPayload(meshtastic_Data_payload_t &payload, std::string const &str) {
+        payload.size = std::min(str.size(), sizeof(payload.bytes));
+        std::memcpy(payload.bytes, str.c_str(), payload.size);
+        assert(payload.size <= sizeof(payload.bytes));
+    }
+
+    bool isPrivateChannel(ChannelIndex const channel) {
+        auto const &info = channels.getByIndex(channel);
+        if (info.role == meshtastic_Channel_Role_DISABLED) {
+            return false;
+        }
+        if (!info.has_settings) {
+            return false;
+        }
+        if (info.settings.psk.size <= 16) {
+            return false;
+        }
+        return true;
+    }
+
+    std::string getNodeShortName(uint32_t const nodeNum) {
+        auto const *node = nodeDB->getMeshNode(nodeNum);
+        if (node && node->has_user) {
+            return node->user.short_name;
+        }
+        return "Unk";
+    }
+
+    bool equalIgnoreCase(std::string const &left, std::string const &right) {
+        if(left.size() != right.size())
+            return false;
+        return std::equal(left.begin(), left.end(), right.begin()
+            , [](char const l, char const r) {
+                return std::tolower(l) == std::tolower(r);
+        });
+    }
+
+    /// Get substring using start and end positions(instead of start and length)
+    std::string startToEnd(std::string const &str, std::string::size_type const start, std::string::size_type const end) {
+        if(end == std::string::npos) return str.substr(start);
+        if(end < start)              return {};
+        else                         return str.substr(start, end - start);
+    }
+
+    bool atEnd(std::string::size_type const pos) {
+        return pos == std::string::npos;
+    }
+
+    /// Set start to current end, and increment past delimiter
+    void setStart(std::string::size_type &start, std::string::size_type const end) {
+        start = end;
+        if(atEnd(start)) return;
+        ++start; // Delimiter is single character
+    }
+
+    /// Search a delimited string of values for a particular value. "i" is 0-based index to value if found
+    bool findMatch(std::string const &values, std::string const &value, size_t &I, char const delim) {
+        std::string::size_type start = 0;
+        std::string::size_type end   = 0;
+        for(size_t i = 0; i < values.size() && !atEnd(start); ++i, setStart(start, end)) {
+            end = values.find(delim, start);
+
+            if(equalIgnoreCase(value, startToEnd(values, start, end))) {
+                I = i;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Count number of values in a delimited string
+    size_t getNumValues(std::string const &values, char const delim) {
+        if(values.empty()) return 0;
+        return 1 + std::count(values.begin(), values.end(), delim);
+    }
+
+    /// Retrieve Ith(0-based) value from a delimited list of values
+    bool getIthValue(std::string const &values, std::string &value, size_t const I, char const delim) {
+        size_t i = 0;
+        std::string::size_type start = 0;
+        std::string::size_type end   = 0;
+        for(i = 0; i <= I && !atEnd(start); ++i, setStart(start, end)) {
+            end = values.find(delim, start);
+
+            if(i == I) {
+                value = startToEnd(values, start, end);
+                return true;
+            }
+        }
+
+        return false;
+    }
+} // namespace reply_utils
