@@ -114,21 +114,25 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
 
     // If there are no queries, or only one query and it matches the message
     if(numQueries == 0 || (numQueries == 1 && equalIgnoreCase(message, config.queries))) {
-        if(numResponses <= 1)
+        if(numResponses <= 1) {
+            LOG_DEBUG("DirectMessageReplyModule: 0 or 1 queries and 1 response");
             getIthValue(config.responses, responseMsg, 0);
-        else { // 0 or 1 queries and multiple responses; choose response based on source address
+        } else { // 0 or 1 queries and multiple responses; choose response based on source address
+            LOG_DEBUG("DirectMessageReplyModule: 0 or 1 queries and >1 response responding with response %zu", (source % numResponses));
             getIthValue(config.responses, responseMsg, (source % numResponses));
         }
     } else if(numQueries > 1) {
         // If more than 1 query, see if any match the message, and use corresponding response
         if(findMatch(config.queries, message, i)) {
             if(i < numResponses) {
+                LOG_DEBUG("DirectMessageReplyModule: matched query index %zu", i);
                 getIthValue(config.responses, responseMsg, i);
             } else {
                 LOG_ERROR("DirectMessageReplyModule: matched query index %zu has no corresponding response (only %zu responses) falling a back to 0", i, numResponses);
                 responseMsg = "Invalid DirectMessageReplyModule configuration";
             }
         } else { // Otherwise, use the first response
+            LOG_DEBUG("DirectMessageReplyModule: no match found, using response 0");
             getIthValue(config.responses, responseMsg, 0);
         }
     }
