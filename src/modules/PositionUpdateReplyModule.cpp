@@ -236,8 +236,8 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     }
 
     /// Received GPS info
-    addToResponseIf(true, getNodeShortName(source) + ": " + geoCoordToString(remote, remoteSats), "\n");
-    addToResponseIf(true,                        "Prec: " + toStringPrecision(1, remotePrecision) + "m bits: " + std::to_string(pos.precision_bits), "\n");
+    addToResponseIf(true, getNodeShortName(source) + ": " + geoCoordToString(remote, remoteSats));
+    addToResponseIf(true, " +- " + toStringPrecision(1, remotePrecision) + "m " + std::to_string(pos.precision_bits) + "bits", "\n");
 
     /// Local GPS info + distance and bearing between remote and local
     if(!haveLoc) {
