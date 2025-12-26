@@ -4,6 +4,7 @@
 
 #include "MultiPortModule.h"
 #include "Singleton.h"
+#include "GeoCoord.h"
 
 /// This module replies to position updates with a configurable message about
 /// the positions of and distance and bearing between the sender and receiver.
@@ -33,8 +34,9 @@ class PositionUpdateReplyModule : public MultiPortModule, public Singleton<Posit
     public:
         using ConfigType = meshtastic_ModuleConfig_PositionUpdateReplyConfig;
 
-        static ConfigType getDefaultConfig();
-        static void       setDefault();
+        static ConfigType &getConfig();
+        static ConfigType  getDefaultConfig();
+        static void        setDefault();
 
         PositionUpdateReplyModule();
 
@@ -54,4 +56,6 @@ class PositionUpdateReplyModule : public MultiPortModule, public Singleton<Posit
 
         /// Retrieve current code word and code word index for source
         size_t getCodeWord(uint32_t const source, std::string &codeWord) const;
+
+        GeoCoord getLocalGeoCoord(uint32_t const source) const;
 };

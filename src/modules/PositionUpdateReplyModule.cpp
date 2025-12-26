@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cassert>
 #include <cstring>
+#include <cstdlib>
 
 #include <string>
 #include <iomanip>
@@ -19,6 +20,10 @@
 #include "DirectMessageReplyModule.h" // For reply_utils::... functions
 
 using namespace reply_utils;
+
+PositionUpdateReplyModule::ConfigType &PositionUpdateReplyModule::getConfig() {
+    return moduleConfig.position_update_reply;
+}
 
 /// The config.next_node and config.next_code_word can contain either a single
 /// next node/code word pair, or a '|' delimited list of nodes. If more than one
@@ -58,15 +63,55 @@ PositionUpdateReplyModule::ConfigType PositionUpdateReplyModule::getDefaultConfi
 }
 
 void PositionUpdateReplyModule::setDefault() {
-    moduleConfig.position_update_reply = getDefaultConfig();
+    getConfig() = getDefaultConfig();
 }
 
 size_t PositionUpdateReplyModule::getCodeWord(uint32_t const source, std::string &codeWord) const {
-    auto const &config = moduleConfig.position_update_reply;
-    auto const  iter   = m_monitored.find(source);
-    auto const  index  = (iter == m_monitored.end() ? 0 : iter->second);
-    getIthValue(config.start_code_word, codeWord, index);
+    auto const iter  = m_monitored.find(source);
+    auto const index = (iter == m_monitored.end() ? 0 : iter->second);
+    getIthValue(getConfig().start_code_word, codeWord, index);
     return index;
+}
+
+/// Source node is needed so that the index for the currently active code word for that
+/// node can be looked up and the corresponding lat/lon retrieved.
+GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) const {
+    GeoCoord local(gpsStatus->getLatitude(), gpsStatus->getLongitude(), gpsStatus->getAltitude());
+
+    auto const iter  = m_monitored.find(source);
+
+    if(iter == m_monitored.end()) {
+        LOG_INFO("Source node %u not monitored, returning gps position", source);
+        return local;
+    }
+
+    auto const index = iter->second;
+
+    std::string lat_lon;
+
+    if(!getIthValue(getConfig().lat_lons, lat_lon, index)) {
+        LOG_INFO("No lat/lon set for index %zu, returning gps position", index);
+        return local;
+    }
+
+    if(lat_lon.empty()) {
+        LOG_INFO("Empty lat/lon returning gps position");
+        return local;
+    }
+
+    auto const pos = lat_lon.find(',');
+
+    if(pos == std::string::npos) {
+        LOG_ERROR("Invalid lat/lon, returning gps position");
+        return local;
+    }
+
+    auto const lat = std::atof(lat_lon.substr(0, pos).c_str());
+    auto const lon = std::atof(lat_lon.substr(pos+1 ).c_str());
+
+    local.updateCoords(lat, lon, local.getAltitude());
+
+    return local;
 }
 
 bool PositionUpdateReplyModule::hasNextNode(ConfigType const &config) {
@@ -119,7 +164,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(const meshta
     if(mp.decoded.portnum != meshtastic_PortNum_TEXT_MESSAGE_APP)
         return ProcessMessage::CONTINUE;
 
-    auto        const &config = moduleConfig.position_update_reply;
+    auto        const &config = getConfig();
     auto        const &p      = mp.decoded;
     auto        const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
     std::string const message{reinterpret_cast<const char *>(p.payload.bytes), p.payload.size};
@@ -158,10 +203,10 @@ Send "stop" to disable.)";
         auto const num = m_monitored.size();
         std::string response = "Position update replys enabled for " + std::to_string(num) + (num == 1 ? " node" : " nodes");
 
-        addToResponse(response, (trackingSender ? " including \"" : " not including \"") + getNodeShortName(source) + "\"");
+        addToResponse(response, (trackingSender ? "including \"" : "not including \"") + getNodeShortName(source) + "\"");
         /// Add next node distance if next node info set
-        addToResponseIf(haveNextNode,  response, "\nNext node distance: " + toStringPrecision(1, config.next_node_distance));
-        addToResponseIf(icodeWord > 0, response, "\nCode word index: " + std::to_string(icodeWord));
+        addToResponseIf(haveNextNode,  response, "Next node distance: " + toStringPrecision(1, config.next_node_distance), "\n");
+        addToResponseIf(icodeWord > 0, response, "Code word index: "    + std::to_string(icodeWord), "\n");
 
         sendReply(mp, response);
         return ProcessMessage::CONTINUE;
@@ -174,7 +219,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     if(mp.decoded.portnum != meshtastic_PortNum_POSITION_APP)
         return ProcessMessage::CONTINUE;
 
-    auto const &config = moduleConfig.position_update_reply;
+    auto const &config = getConfig();
     auto const &p      = mp.decoded;
     auto const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
 
@@ -198,8 +243,8 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
         return ProcessMessage::STOP;
     }
 
-    GeoCoord remote(pos.latitude_i, pos.longitude_i, pos.altitude);
-    GeoCoord local(gpsStatus->getLatitude(), gpsStatus->getLongitude(), gpsStatus->getAltitude());
+    GeoCoord       remote(pos.latitude_i, pos.longitude_i, pos.altitude);
+    GeoCoord const local = getLocalGeoCoord(source);
 
     auto const remoteSats      = pos.sats_in_view;
     auto const localSats       = gpsStatus->getNumSatellites();
@@ -211,7 +256,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     auto const declination     = config.declination;
     bool const haveDecl        = (declination != 0.f);
     auto const trueBearing     = normalizeBearing((180.f / M_PI) * remote.bearingTo(local));
-    auto       magBearing      = normalizeBearing(trueBearing - declination);
+    auto const magBearing      = normalizeBearing(trueBearing - declination);
 
     assert(trueBearing >= 0.f && trueBearing < 360.f);
     assert(magBearing  >= 0.f && magBearing  < 360.f);
@@ -290,7 +335,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
 }
 
 ProcessMessage PositionUpdateReplyModule::handleReceived(const meshtastic_MeshPacket &mp) {
-    auto const &config = moduleConfig.position_update_reply;
+    auto const &config = getConfig();
     auto const &p      = mp.decoded;
 
     if (!config.enabled) {
