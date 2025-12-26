@@ -82,32 +82,11 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
         return ProcessMessage::CONTINUE;
     }
 
-    std::string response;
-
-    // Check if we need a separator and add string to response
-    auto addToResponse = [&response](std::string const &str, char const *sep = " ") {
-        if (str.empty()) {
-            return;
-        }
-        if (!response.empty() && response.back() != '\n') {
-            response += sep;
-        }
-        response += str;
-    };
-
-    // Add to response if condition is true
-    auto addToResponseIf = [&addToResponse](bool const condition, std::string const &str, char const *sep = " ") {
-        if (condition)
-            addToResponse(str, sep);
-    };
-
     // See if message matches as query and provide appropriate response if so.
-    size_t i = 0;
-    std::string responseMsg;
-
     auto const numQueries   = getNumValues(config.queries);
     auto const numResponses = getNumValues(config.responses);
 
+    size_t     iresponse    = 0;
     if(numQueries > 1 && numQueries != numResponses) {
         LOG_WARN("DirectMessageReplyModule: number of queries (%zu) is > 1 and does not match number of responses (%zu)", numQueries, numResponses);
     }
@@ -115,37 +94,46 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
     // If there are no queries, or only one query and it matches the message
     if(numQueries == 0 || (numQueries == 1 && equalIgnoreCase(message, config.queries))) {
         if(numResponses <= 1) {
+            iresponse = 0;
             LOG_DEBUG("DirectMessageReplyModule: 0 or 1 queries and 1 response");
-            getIthValue(config.responses, responseMsg, 0);
         } else { // 0 or 1 queries and multiple responses; choose response based on source address
-            LOG_DEBUG("DirectMessageReplyModule: 0 or 1 queries and >1 response responding with response %zu", (source % numResponses));
-            getIthValue(config.responses, responseMsg, (source % numResponses));
+            iresponse = (source % numResponses);
+            LOG_DEBUG("DirectMessageReplyModule: 0 or 1 queries and >1 response responding with response %zu", iresponse);
         }
     } else if(numQueries > 1) {
         // If more than 1 query, see if any match the message, and use corresponding response
-        if(findMatch(config.queries, message, i)) {
-            if(i < numResponses) {
-                LOG_DEBUG("DirectMessageReplyModule: matched query index %zu", i);
-                getIthValue(config.responses, responseMsg, i);
+        if(findMatch(config.queries, message, iresponse)) {
+            if(iresponse < numResponses) {
+                LOG_DEBUG("DirectMessageReplyModule: matched query index %zu", iresponse);
             } else {
-                LOG_ERROR("DirectMessageReplyModule: matched query index %zu has no corresponding response (only %zu responses) falling a back to 0", i, numResponses);
-                responseMsg = "Invalid DirectMessageReplyModule configuration";
+                LOG_ERROR("DirectMessageReplyModule: matched query index %zu has no corresponding response (only %zu responses) falling a back to 0", iresponse, numResponses);
             }
         } else { // Otherwise, use the first response
+            iresponse = 0;
             LOG_DEBUG("DirectMessageReplyModule: no match found, using response 0");
-            getIthValue(config.responses, responseMsg, 0);
         }
     }
 
-    addToResponse(responseMsg);
+    std::string response;
 
-    addToResponseIf(config.echo_user, "User: " + sourceShortName, "\n");
-    addToResponseIf(!isDM, "Channel: " + std::string(channels.getName(channel)), "\n");
-    addToResponseIf(config.send_hops, "Hop lim: " + std::to_string(mp.hop_limit) + "/" + std::to_string(mp.hop_start), "\n");
-    addToResponseIf(config.send_signal_metrics, "SNR: " + toStringPrecision(1, mp.rx_snr)); // + " dB";
-    addToResponseIf(config.send_signal_metrics, "RSSI: " + std::to_string(mp.rx_rssi));     // + " dBm";
+    if(iresponse >= numResponses) {
+        response = "Invalid DirectMessageReplyModule configuration";
+    } else {
+        getIthValue(config.responses, response, iresponse);
+    }
 
-    addToResponseIf(config.echo_message, message, "\n");
+    // Add to response if condition is true
+    auto _addToResponseIf = [&response](bool const condition, std::string const &str, char const *sep = " ") {
+        addToResponseIf(condition, response, str, sep);
+    };
+
+    _addToResponseIf(config.echo_user,           "User: "    + sourceShortName, "\n");
+    _addToResponseIf(!isDM,                      "Channel: " + std::string(channels.getName(channel)), "\n");
+    _addToResponseIf(config.send_hops,           "Hop lim: " + std::to_string(mp.hop_limit) + "/" + std::to_string(mp.hop_start), "\n");
+    _addToResponseIf(config.send_signal_metrics, "SNR: "     + toStringPrecision(1, mp.rx_snr)); // + " dB";
+    _addToResponseIf(config.send_signal_metrics, "RSSI: "    + std::to_string(mp.rx_rssi));     // + " dBm";
+
+    _addToResponseIf(config.echo_message, message, "\n");
 
     sendReply(mp, response);
 
@@ -279,4 +267,17 @@ namespace reply_utils {
 
         return false;
     }
+
+    // Check if we need a separator and add string to response
+    void addToResponse(std::string &response, std::string const &str, char const *sep) {
+        if (str.empty()) return;
+        if (!response.empty() && response.back() != '\n')
+            response += sep;
+        response += str;
+    };
+
+    // Add to response if condition is true
+    void addToResponseIf(bool const condition, std::string &response, std::string const &str, char const *sep) {
+        if (condition) addToResponse(response, str, sep);
+    };
 } // namespace reply_utils

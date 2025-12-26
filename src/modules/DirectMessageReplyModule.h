@@ -103,4 +103,10 @@ namespace reply_utils {
 
     /// Retrieve Ith(0-based) value from a delimited list of values
     bool getIthValue(std::string const &values, std::string &value, size_t const I, char const delim = '|');
+
+    /// Append a string to a response string with a separator
+    void addToResponse(std::string &response, std::string const &str, char const *sep = " ");
+
+    /// Append a string to a response string if a condition is true
+    void addToResponseIf(bool const condition, std::string &response, std::string const &str, char const *sep = " ");
 }

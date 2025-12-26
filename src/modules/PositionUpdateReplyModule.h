@@ -1,6 +1,6 @@
 #pragma once
 
-#include <set>
+#include <map>
 
 #include "MultiPortModule.h"
 #include "Singleton.h"
@@ -48,7 +48,10 @@ class PositionUpdateReplyModule : public MultiPortModule, public Singleton<Posit
 
         void sendReply(const meshtastic_MeshPacket &mp, const std::string &response);
 
-        std::set<NodeNum> m_monitored;
+        std::map<NodeNum, size_t> m_monitored;
 
         static bool hasNextNode(ConfigType const &config);
+
+        /// Retrieve current code word and code word index for source
+        size_t getCodeWord(uint32_t const source, std::string &codeWord) const;
 };

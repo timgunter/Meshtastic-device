@@ -61,6 +61,14 @@ void PositionUpdateReplyModule::setDefault() {
     moduleConfig.position_update_reply = getDefaultConfig();
 }
 
+size_t PositionUpdateReplyModule::getCodeWord(uint32_t const source, std::string &codeWord) const {
+    auto const &config = moduleConfig.position_update_reply;
+    auto const  iter   = m_monitored.find(source);
+    auto const  index  = (iter == m_monitored.end() ? 0 : iter->second);
+    getIthValue(config.start_code_word, codeWord, index);
+    return index;
+}
+
 bool PositionUpdateReplyModule::hasNextNode(ConfigType const &config) {
     return !std::string(config.next_node).empty() || !std::string(config.next_code_word).empty();
 }
@@ -116,45 +124,44 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(const meshta
     auto        const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
     std::string const message{reinterpret_cast<const char *>(p.payload.bytes), p.payload.size};
 
-    std::string const startCodeWord = (0 == strnlen(config.start_code_word, sizeof(config.start_code_word)) ? "start" : config.start_code_word);
-    bool        const isCodeWord    = !equalIgnoreCase(startCodeWord, "start");
-    bool        const haveNextNode  = hasNextNode(config);
+    std::string       codeWord;
+    size_t      const icodeWord    = getCodeWord(source, codeWord);
+    bool        const isCodeWord   = !equalIgnoreCase(codeWord, "start");
+    bool        const haveNextNode = hasNextNode(config);
 
-    if(equalIgnoreCase(message, startCodeWord)) {
-        LOG_DEBUG("Starting monitoring node: %u", source);
-        m_monitored.insert(source);
-        sendReply(
-            mp,
-            R"(Position update replys enabled.
-Will respond to regular updates, "exchange position", or "request position" requests. Recommend increasing your GPS reporting precision.
-Send "stop" to disable.)"
-        );
+    if(equalIgnoreCase(message, codeWord)) {
+        if(!isCodeWord) LOG_DEBUG("Starting monitoring node: %u", source);
+        else            LOG_DEBUG("Received codeWord: %u, from node: %u", icodeWord, source);
 
-        if(haveNextNode) {
-            sendReply(mp, "To receive clues about the next node, send a position update from within "
-                + toStringPrecision(1, config.next_node_distance) + "m of this node."
-            );
-        }
+        m_monitored[source] = icodeWord+1;
+
+        std::string response = R"(Position update replys enabled.
+Will respond to regular updates or "exchange position" requests.
+Send "stop" to disable.)";
+
+        addToResponseIf(haveNextNode, response, "For clues about the next node, send a position update from within "
+            + toStringPrecision(1, config.next_node_distance) + "m of this node.");
+
+        sendReply(mp, response);
         return ProcessMessage::CONTINUE;
     }
 
     if(equalIgnoreCase(message, "stop")) {
         LOG_DEBUG("Stopping monitoring node: %u", source);
         m_monitored.erase(source);
-        sendReply(mp, "Position update replys disabled. Send \"" + (isCodeWord ? std::string{"<codeword>"} : startCodeWord) + "\" to enable.");
+        sendReply(mp, "Position update replys disabled. Send \"" + (isCodeWord ? std::string{"<codeword>"} : codeWord) + "\" to enable.");
         return ProcessMessage::CONTINUE;
     }
 
     if(equalIgnoreCase(message, "status")) {
         bool const trackingSender = (m_monitored.count(source) > 0);
         auto const num = m_monitored.size();
-        std::string response = "Position update replys enabled for " + std::to_string(num) + (num == 1 ? " node" : " nodes")
-                             +  (trackingSender ? " including \"" : " not including \"") + getNodeShortName(source) + "\"";
+        std::string response = "Position update replys enabled for " + std::to_string(num) + (num == 1 ? " node" : " nodes");
 
+        addToResponse(response, (trackingSender ? " including \"" : " not including \"") + getNodeShortName(source) + "\"");
         /// Add next node distance if next node info set
-        if(haveNextNode) {
-            response += "\nNext node distance: " + toStringPrecision(1, config.next_node_distance);
-        }
+        addToResponseIf(haveNextNode,  response, "\nNext node distance: " + toStringPrecision(1, config.next_node_distance));
+        addToResponseIf(icodeWord > 0, response, "\nCode word index: " + std::to_string(icodeWord));
 
         sendReply(mp, response);
         return ProcessMessage::CONTINUE;
@@ -212,16 +219,13 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     std::string response;
 
     // Check if we need a separator and add string to response
-    auto addToResponse = [&response](std::string const &str, char const *sep = " ") {
-        if (str.empty()) return;
-        if (!response.empty() && response.back() != '\n')
-            response += sep;
-        response += str;
+    auto _addToResponse = [&response](std::string const &str, char const *sep = " ") {
+        addToResponse(response, str, sep);
     };
 
     // Add to response if condition is true
-    auto addToResponseIf = [&addToResponse](bool const condition, std::string const &str, char const *sep = " ") {
-        if (condition) addToResponse(str, sep);
+    auto _addToResponseIf = [&response](bool const condition, std::string const &str, char const *sep = " ") {
+        addToResponseIf(condition, response, str, sep);
     };
 
     /// Next node info
@@ -230,37 +234,37 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
 
     /// If next node, and position is manually set, reject!
     if(haveNextNode && pos.location_source == meshtastic_Position_LocSource_LOC_MANUAL) {
-        addToResponse("Cheater!");
+        _addToResponse("Cheater!");
         sendReply(mp, response);
         return ProcessMessage::CONTINUE;
     }
 
     /// Received GPS info
-    addToResponseIf(true, getNodeShortName(source) + ": " + geoCoordToString(remote, remoteSats));
-    addToResponseIf(true, " +- " + toStringPrecision(1, remotePrecision) + "m " + std::to_string(pos.precision_bits) + "bits", "\n");
+    _addToResponseIf(true, getNodeShortName(source) + ": " + geoCoordToString(remote, remoteSats));
+    _addToResponseIf(true, " +- " + toStringPrecision(1, remotePrecision) + "m " + std::to_string(pos.precision_bits) + "bits", "\n");
 
     /// Local GPS info + distance and bearing between remote and local
     if(!haveLoc) {
         bool const needLoc = (config.send_location || config.send_distance || config.send_bearing);
-        addToResponseIf(needLoc, getNodeShortName() + ": " + "LLA not available", "\n");
+        _addToResponseIf(needLoc, getNodeShortName() + ": " + "LLA not available", "\n");
     } else {
-        addToResponseIf(config.send_location, getNodeShortName() + ":  " + geoCoordToString(local, localSats), "\n");
-        addToResponseIf(config.send_distance,            "Dist: "   + toStringPrecision(1, distance) + "m","\n");
-        addToResponseIf(config.send_distance,            "Height: " + toStringPrecision(1, height  ) + "m","\n");
-        addToResponseIf(config.send_bearing,             "True: "   + toStringPrecision(1, trueBearing), "\n");
-        addToResponseIf(config.send_bearing && haveDecl, "Mag: "    + toStringPrecision(1, magBearing ), "\n");
-        addToResponseIf(config.send_bearing && haveDecl, "Decl: "   + toStringPrecision(1, declination), "\n");
+        _addToResponseIf(config.send_location, getNodeShortName() + ":  " + geoCoordToString(local, localSats), "\n");
+        _addToResponseIf(config.send_distance,            "Dist: "   + toStringPrecision(1, distance) + "m","\n");
+        _addToResponseIf(config.send_distance,            "Height: " + toStringPrecision(1, height  ) + "m","\n");
+        _addToResponseIf(config.send_bearing,             "True: "   + toStringPrecision(1, trueBearing), "\n");
+        _addToResponseIf(config.send_bearing && haveDecl, "Mag: "    + toStringPrecision(1, magBearing ), "\n");
+        _addToResponseIf(config.send_bearing && haveDecl, "Decl: "   + toStringPrecision(1, declination), "\n");
     }
 
     /// Mesh packet and signal metrics
-    addToResponseIf(config.send_hops,           "Hops: " + std::to_string(mp.hop_start) + "/" + std::to_string(mp.hop_limit), "\n");
-    addToResponseIf(config.send_signal_metrics, "SNR: "  + toStringPrecision(1, mp.rx_snr)); // + " dB";
-    addToResponseIf(config.send_signal_metrics, "RSSI: " + std::to_string(mp.rx_rssi));     // + " dBm";
+    _addToResponseIf(config.send_hops,           "Hops: " + std::to_string(mp.hop_start) + "/" + std::to_string(mp.hop_limit), "\n");
+    _addToResponseIf(config.send_signal_metrics, "SNR: "  + toStringPrecision(1, mp.rx_snr)); // + " dB";
+    _addToResponseIf(config.send_signal_metrics, "RSSI: " + std::to_string(mp.rx_rssi));     // + " dBm";
 
     /// If set, reveal info about next node in sequence
     if(distance <= nextNodeDist) {
         if(remotePrecision > nextNodeDist) {
-            addToResponseIf(haveNextNode, "Unable to reveal clue due to bad precision", "\n");
+            _addToResponseIf(haveNextNode, "Unable to reveal clue due to bad precision", "\n");
         } else {
             std::string nextNode     = config.next_node;
             std::string nextCodeWord = config.next_code_word;
@@ -275,8 +279,8 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
             if(numNodes     > 1) getIthValue(config.next_node,      nextNode,     (source % numNodes));
             if(numCodeWords > 1) getIthValue(config.next_code_word, nextCodeWord, (source % numCodeWords));
 
-            addToResponseIf(!nextNode.empty(),     "Next node: "     + nextNode,     "\n");
-            addToResponseIf(!nextCodeWord.empty(), "Next codeword: " + nextCodeWord, "\n");
+            _addToResponseIf(!nextNode.empty(),     "Next node: "     + nextNode,     "\n");
+            _addToResponseIf(!nextCodeWord.empty(), "Next codeword: " + nextCodeWord, "\n");
         }
     }
 
