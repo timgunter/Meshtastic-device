@@ -66,57 +66,6 @@ void PositionUpdateReplyModule::setDefault() {
     getConfig() = getDefaultConfig();
 }
 
-size_t PositionUpdateReplyModule::getCodeWord(uint32_t const source, std::string &codeWord) const {
-    auto const iter  = m_monitored.find(source);
-    auto const index = (iter == m_monitored.end() ? 0 : iter->second);
-    getIthValue(getConfig().start_code_word, codeWord, index);
-    return index;
-}
-
-/// Source node is needed so that the index for the currently active code word for that
-/// node can be looked up and the corresponding lat/lon retrieved.
-GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) const {
-    GeoCoord local(gpsStatus->getLatitude(), gpsStatus->getLongitude(), gpsStatus->getAltitude());
-
-    auto const iter  = m_monitored.find(source);
-
-    if(iter == m_monitored.end()) {
-        LOG_INFO("Source node %u not monitored, returning gps position", source);
-        return local;
-    }
-
-    auto const index = iter->second;
-
-    std::string lat_lon;
-
-    if(!getIthValue(getConfig().lat_lons, lat_lon, index)) {
-        LOG_INFO("No lat/lon set for index %zu, returning gps position", index);
-        return local;
-    }
-
-    if(lat_lon.empty()) {
-        LOG_INFO("Empty lat/lon returning gps position");
-        return local;
-    }
-
-    auto const pos = lat_lon.find(',');
-
-    if(pos == std::string::npos) {
-        LOG_ERROR("Invalid lat/lon, returning gps position");
-        return local;
-    }
-
-    auto const lat = std::atof(lat_lon.substr(0, pos).c_str());
-    auto const lon = std::atof(lat_lon.substr(pos+1 ).c_str());
-
-    local.updateCoords(lat, lon, local.getAltitude());
-
-    return local;
-}
-
-bool PositionUpdateReplyModule::hasNextNode(ConfigType const &config) {
-    return !std::string(config.next_node).empty() || !std::string(config.next_code_word).empty();
-}
 
 PositionUpdateReplyModule::PositionUpdateReplyModule()
 : MultiPortModule(
@@ -168,17 +117,18 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(const meshta
     auto        const &p      = mp.decoded;
     auto        const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
     std::string const message{reinterpret_cast<const char *>(p.payload.bytes), p.payload.size};
+    bool        const haveNextNode = hasNextNode(config) || (numCodeWords(config) > 1);
 
-    std::string       codeWord;
-    size_t      const icodeWord    = getCodeWord(source, codeWord);
-    bool        const isCodeWord   = !equalIgnoreCase(codeWord, "start");
-    bool        const haveNextNode = hasNextNode(config);
+    size_t index = 0;
+    getSourceIndex(source, index);
 
-    if(equalIgnoreCase(message, codeWord)) {
+    if(matchesCodeWord(message, index)) {
+        bool const isCodeWord = !equalIgnoreCase(message, "start");
+
         if(!isCodeWord) LOG_DEBUG("Starting monitoring node: %u", source);
-        else            LOG_DEBUG("Received codeWord: %u, from node: %u", icodeWord, source);
+        else            LOG_DEBUG("Received codeWord: %u, from node: %u", index, source);
 
-        m_monitored[source] = icodeWord+1;
+        m_monitored[source] = index;
 
         std::string response = R"(Position update replys enabled.
 Will respond to regular updates or "exchange position" requests.
@@ -192,9 +142,14 @@ Send "stop" to disable.)";
     }
 
     if(equalIgnoreCase(message, "stop")) {
+        bool isCodeWord = true;
+        std::string codeWord;
+        if(getCodeWord(index, codeWord))
+            isCodeWord = !equalIgnoreCase(codeWord, "start");
+
         LOG_DEBUG("Stopping monitoring node: %u", source);
         m_monitored.erase(source);
-        sendReply(mp, "Position update replys disabled. Send \"" + (isCodeWord ? std::string{"<codeword>"} : codeWord) + "\" to enable.");
+        sendReply(mp, "Position update replys disabled. Send \"" + (isCodeWord ? std::string{"<codeword>"} : "start") + "\" to enable.");
         return ProcessMessage::CONTINUE;
     }
 
@@ -205,8 +160,8 @@ Send "stop" to disable.)";
 
         addToResponse(response, (trackingSender ? "including \"" : "not including \"") + getNodeShortName(source) + "\"");
         /// Add next node distance if next node info set
-        addToResponseIf(haveNextNode,  response, "Next node distance: " + toStringPrecision(1, config.next_node_distance), "\n");
-        addToResponseIf(icodeWord > 0, response, "Code word index: "    + std::to_string(icodeWord), "\n");
+        addToResponseIf(haveNextNode, response, "Next node distance: " + toStringPrecision(1, config.next_node_distance), "\n");
+        addToResponseIf(index > 0,    response, "Code word index: "    + std::to_string(index), "\n");
 
         sendReply(mp, response);
         return ProcessMessage::CONTINUE;
@@ -311,18 +266,10 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
         if(remotePrecision > nextNodeDist) {
             _addToResponseIf(haveNextNode, "Unable to reveal clue due to bad precision", "\n");
         } else {
-            std::string nextNode     = config.next_node;
-            std::string nextCodeWord = config.next_code_word;
+            std::string nextNode;
+            std::string nextCodeWord;
 
-            auto numNodes     = getNumValues(config.next_node);
-            auto numCodeWords = getNumValues(config.next_code_word);
-
-            if(numNodes > 0 && numCodeWords > 0 && numNodes != numCodeWords) {
-                LOG_WARN("PositionUpdateReplyModule: next_node has %zu entries, but next_code_word has %zu entries!", numNodes, numCodeWords);
-            }
-
-            if(numNodes     > 1) getIthValue(config.next_node,      nextNode,     (source % numNodes));
-            if(numCodeWords > 1) getIthValue(config.next_code_word, nextCodeWord, (source % numCodeWords));
+            getNextNodeCode(source, nextNode, nextCodeWord);
 
             _addToResponseIf(!nextNode.empty(),     "Next node: "     + nextNode,     "\n");
             _addToResponseIf(!nextCodeWord.empty(), "Next codeword: " + nextCodeWord, "\n");
@@ -373,4 +320,127 @@ void PositionUpdateReplyModule::sendReply(
     LOG_DEBUG("Replying to %u with: %s", source, response.c_str());
 
     service->sendToMesh(reply, RX_SRC_LOCAL);
+}
+
+bool PositionUpdateReplyModule::hasLatLons(ConfigType const &config) {
+    return !std::string(config.lat_lons).empty();
+}
+
+bool PositionUpdateReplyModule::hasNextNode(ConfigType const &config) {
+    return !std::string(config.next_node).empty() || !std::string(config.next_code_word).empty();
+}
+
+size_t PositionUpdateReplyModule::numCodeWords(ConfigType const &config) {
+    return getNumValues(config.start_code_word);
+}
+
+/// Check if message matches codeword
+bool PositionUpdateReplyModule::matchesCodeWord(std::string const &message, size_t &icodeWord) const {
+    auto        const &config       = getConfig();
+    std::string const  codeWords    = config.start_code_word;
+    auto        const  numCodeWords = getNumValues(codeWords);
+
+    icodeWord = 0;
+    if(     numCodeWords == 0) { return equalIgnoreCase(message, "start"); }
+    else if(numCodeWords == 1) { return equalIgnoreCase(message, codeWords); }
+
+    for(icodeWord = 0; icodeWord < numCodeWords; ++icodeWord) {
+        std::string codeWord;
+        getIthValue(codeWords, codeWord, icodeWord);
+        if(equalIgnoreCase(message, codeWord))
+            return true;
+    }
+
+    return false;
+}
+
+/// Return true if source is being monitored and retrieve current source index
+bool PositionUpdateReplyModule::getSourceIndex(uint32_t const source, size_t &index) const {
+    auto const iter  = m_monitored.find(source);
+    bool const found = (iter != m_monitored.end());
+    index = (!found ? 0 : iter->second);
+    return found;
+}
+
+bool PositionUpdateReplyModule::getCodeWord(size_t const index, std::string &codeWord) const {
+    return getIthValue(getConfig().start_code_word, codeWord, index);
+}
+
+/// Retrieve current position to report against for source
+/// Source node is needed so that the index for the currently active code word for that
+/// node can be looked up and the corresponding lat/lon retrieved.
+GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) const {
+    GeoCoord local(gpsStatus->getLatitude(), gpsStatus->getLongitude(), gpsStatus->getAltitude());
+
+    size_t index = 0;
+    if(getSourceIndex(source, index)) {
+        LOG_INFO("Source node %u not monitored, returning gps position", source);
+        return local;
+    }
+
+    std::string lat_lon;
+    if(!getIthValue(getConfig().lat_lons, lat_lon, index)) {
+        LOG_INFO("No lat/lon set for index %zu, returning gps position", index);
+        return local;
+    }
+
+    if(lat_lon.empty()) {
+        LOG_INFO("Empty lat/lon returning gps position");
+        return local;
+    }
+
+    auto const pos = lat_lon.find(',');
+
+    if(pos == std::string::npos) {
+        LOG_ERROR("Invalid lat/lon, returning gps position");
+        return local;
+    }
+
+    auto const lat = std::atof(lat_lon.substr(0, pos).c_str());
+    auto const lon = std::atof(lat_lon.substr(pos+1 ).c_str());
+
+    local.updateCoords(lat, lon, local.getAltitude());
+
+    return local;
+}
+
+/// Retrieve next node and next code word in sequence
+void PositionUpdateReplyModule::getNextNodeCode(uint32_t const source, std::string &nextNode, std::string &nextCodeWord) const {
+    auto const &config           = getConfig();
+    auto const  numCodeWords     = getNumValues(config.start_code_word);
+    auto const  numNextNodes     = getNumValues(config.next_node);
+    auto const  numNextCodeWords = getNumValues(config.next_code_word);
+
+    if(numNextNodes > 0 && numNextCodeWords > 0 && numNextNodes != numNextCodeWords) {
+        LOG_WARN("PositionUpdateReplyModule: next_node has %zu entries, but next_code_word has %zu entries!", numNextNodes, numNextCodeWords);
+    }
+
+    nextNode.clear();
+    nextCodeWord.clear();
+
+    if(numNextNodes == 1) {
+        nextNode = config.next_node;
+    } else if(numNextNodes > 1) {
+        getIthValue(config.next_node, nextNode, (source % numNextNodes));
+    } else if(numNextNodes == 0 && numCodeWords > 0) {
+        /// Next node is this node
+        nextNode = getNodeLongName();
+    }
+
+    if(numNextCodeWords == 1) {
+        nextCodeWord = config.next_code_word;
+    } else if(numNextCodeWords > 1) {
+        getIthValue(config.next_code_word, nextCodeWord, (source % numNextCodeWords));
+    } else if(numNextCodeWords == 0 && numCodeWords > 0) {
+        /// Retrieve code word from next in list of start code words for this node
+        size_t index = 0;
+        getSourceIndex(source, index);
+
+        ++index;
+        if(!getCodeWord(index, nextCodeWord)) {
+            /// If not found, we are out of code words and have reached the end
+            if(numNextNodes == 0)
+                nextNode = "winner!";
+        }
+    }
 }

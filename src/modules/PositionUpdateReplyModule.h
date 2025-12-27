@@ -52,10 +52,22 @@ class PositionUpdateReplyModule : public MultiPortModule, public Singleton<Posit
 
         std::map<NodeNum, size_t> m_monitored;
 
-        static bool hasNextNode(ConfigType const &config);
+        static bool   hasLatLons(  ConfigType const &config = getConfig());
+        static bool   hasNextNode( ConfigType const &config = getConfig());
+        static size_t numCodeWords(ConfigType const &config = getConfig());
 
-        /// Retrieve current code word and code word index for source
-        size_t getCodeWord(uint32_t const source, std::string &codeWord) const;
+        /// Check if message matches codeword
+        bool matchesCodeWord(std::string const &message, size_t &icodeWord) const;
 
+        /// Return true if source is being monitored and retrieve current source index
+        bool getSourceIndex(uint32_t const source, size_t &index) const;
+
+        /// Retrieve current code word by index
+        bool getCodeWord(size_t const index, std::string &codeWord) const;
+
+        /// Retrieve current position to report against for source
         GeoCoord getLocalGeoCoord(uint32_t const source) const;
+
+        /// Retrieve next node and next code word in sequence
+        void getNextNodeCode(uint32_t const source, std::string &nextNode, std::string &nextCodeWord) const;
 };
