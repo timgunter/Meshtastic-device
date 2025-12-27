@@ -202,6 +202,14 @@ namespace reply_utils {
         return "Unk";
     }
 
+    std::string getNodeLongName(uint32_t const nodeNum) {
+        auto const *node = nodeDB->getMeshNode(nodeNum);
+        if (node && node->has_user) {
+            return node->user.long_name;
+        }
+        return "Unknown";
+    }
+
     bool equalIgnoreCase(std::string const &left, std::string const &right) {
         if(left.size() != right.size())
             return false;

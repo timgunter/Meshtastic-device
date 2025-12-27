@@ -80,8 +80,9 @@ namespace reply_utils {
     /// Return true if channel is private
     bool isPrivateChannel(ChannelIndex const channel);
 
-    /// Retrieve short name for node
+    /// Retrieve short/long name for node
     std::string getNodeShortName(uint32_t const nodeNum = nodeDB->getNodeNum());
+    std::string getNodeLongName( uint32_t const nodeNum = nodeDB->getNodeNum());
 
     /// Returns true if strings match ignoring case
     bool equalIgnoreCase(std::string const &left, std::string const &right);
