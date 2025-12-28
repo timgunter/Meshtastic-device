@@ -59,6 +59,8 @@ PositionUpdateReplyModule::ConfigType PositionUpdateReplyModule::getDefaultConfi
     /// Default next node distance is 4 meters
     config.next_node_distance = 4.f;
 
+    config.lat_lons[0] = '\0';
+
     return config;
 }
 
@@ -240,8 +242,8 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     }
 
     /// Received GPS info
-    _addToResponseIf(true, getNodeShortName(source) + ": " + geoCoordToString(remote, remoteSats));
-    _addToResponseIf(true, " +- " + toStringPrecision(1, remotePrecision) + "m " + std::to_string(pos.precision_bits) + "bits", "\n");
+    _addToResponseIf(true, getNodeShortName(source) + ": " + geoCoordToString(remote, remoteSats), "\n");
+    _addToResponseIf(true, "+- " + toStringPrecision(1, remotePrecision) + "m " + std::to_string(pos.precision_bits) + "bits");
 
     /// Local GPS info + distance and bearing between remote and local
     if(!haveLoc) {
