@@ -116,7 +116,7 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
 
     std::string response;
 
-    if(iresponse >= numResponses) {
+    if(iresponse >= numResponses && numResponses > 0) {
         response = "Invalid DirectMessageReplyModule configuration";
     } else {
         getIthValue(config.responses, response, iresponse);
