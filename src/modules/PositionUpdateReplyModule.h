@@ -48,7 +48,7 @@ class PositionUpdateReplyModule : public MultiPortModule, public Singleton<Posit
         ProcessMessage handleReceivedTextMessage(const meshtastic_MeshPacket &mp);
         ProcessMessage handleReceivedPosition(   const meshtastic_MeshPacket &mp);
 
-        void sendReply(const meshtastic_MeshPacket &mp, const std::string &response);
+        void sendReply(const meshtastic_MeshPacket &mp, const std::string &response, const size_t maxLength = 226);
 
         std::map<NodeNum, size_t> m_monitored;
 

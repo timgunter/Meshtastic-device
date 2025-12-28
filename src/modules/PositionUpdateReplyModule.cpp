@@ -19,6 +19,19 @@
 
 #include "DirectMessageReplyModule.h" // For reply_utils::... functions
 
+/// #defines to promote debug and info messages to make them stand out
+#ifdef DEBUG_AS_INFO
+#   define LOG_DEBUG LOG_WARN
+#endif
+
+#ifdef DEBUG_AS_WARN
+#   define LOG_DEBUG LOG_WARN
+#endif
+
+#ifdef INFO_AS_WARN
+#   define LOG_INFO  LOG_WARN
+#endif
+
 using namespace reply_utils;
 
 PositionUpdateReplyModule::ConfigType &PositionUpdateReplyModule::getConfig() {
@@ -122,7 +135,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(const meshta
     bool        const haveNextNode = hasNextNode(config) || (numCodeWords(config) > 1);
 
     size_t index = 0;
-    getSourceIndex(source, index);
+    bool const monitored = getSourceIndex(source, index);
 
     if(matchesCodeWord(message, index)) {
         bool const isCodeWord = !equalIgnoreCase(message, "start");
@@ -162,8 +175,8 @@ Send "stop" to disable.)";
 
         addToResponse(response, (trackingSender ? "including \"" : "not including \"") + getNodeShortName(source) + "\"");
         /// Add next node distance if next node info set
-        addToResponseIf(haveNextNode, response, "Next node distance: " + toStringPrecision(1, config.next_node_distance), "\n");
-        addToResponseIf(index > 0,    response, "Code word index: "    + std::to_string(index), "\n");
+        addToResponseIf(haveNextNode,           response, "Next node distance: " + toStringPrecision(1, config.next_node_distance), "\n");
+        addToResponseIf(monitored && index > 0, response, "Code word index: "    + std::to_string(index), "\n");
 
         sendReply(mp, response);
         return ProcessMessage::CONTINUE;
@@ -173,6 +186,8 @@ Send "stop" to disable.)";
 }
 
 ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtastic_MeshPacket &mp) {
+    static size_t constexpr max_next_node_length = 12;
+
     if(mp.decoded.portnum != meshtastic_PortNum_POSITION_APP)
         return ProcessMessage::CONTINUE;
 
@@ -258,11 +273,6 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
         _addToResponseIf(config.send_bearing && haveDecl, "Decl: "   + toStringPrecision(1, declination), "\n");
     }
 
-    /// Mesh packet and signal metrics
-    _addToResponseIf(config.send_hops,           "Hops: " + std::to_string(mp.hop_start) + "/" + std::to_string(mp.hop_limit), "\n");
-    _addToResponseIf(config.send_signal_metrics, "SNR: "  + toStringPrecision(1, mp.rx_snr)); // + " dB";
-    _addToResponseIf(config.send_signal_metrics, "RSSI: " + std::to_string(mp.rx_rssi));     // + " dBm";
-
     /// If set, reveal info about next node in sequence
     if(distance <= nextNodeDist) {
         if(remotePrecision > nextNodeDist) {
@@ -273,9 +283,14 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
 
             getNextNodeCode(source, nextNode, nextCodeWord);
 
-            _addToResponseIf(!nextNode.empty(),     "Next node: "     + nextNode,     "\n");
+            _addToResponseIf(!nextNode.empty(),     "Next node: "     + nextNode.substr(0, max_next_node_length), "\n");
             _addToResponseIf(!nextCodeWord.empty(), "Next codeword: " + nextCodeWord, "\n");
         }
+    } else {
+        /// Mesh packet and signal metrics
+        _addToResponseIf(config.send_hops,           "Hops: " + std::to_string(mp.hop_start) + "/" + std::to_string(mp.hop_limit), "\n");
+        _addToResponseIf(config.send_signal_metrics, "SNR: "  + toStringPrecision(1, mp.rx_snr)); // + " dB";
+        _addToResponseIf(config.send_signal_metrics, "RSSI: " + std::to_string(mp.rx_rssi));     // + " dBm";
     }
 
     sendReply(mp, response);
@@ -306,6 +321,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceived(const meshtastic_MeshPa
 void PositionUpdateReplyModule::sendReply(
     const   meshtastic_MeshPacket &mp
     , const std::string           &response
+    , const size_t                 maxLength
 ) {
     auto const &p      = mp.decoded;
     auto const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
@@ -317,7 +333,7 @@ void PositionUpdateReplyModule::sendReply(
 
     reply->decoded.reply_id = mp.id; // Set the reply ID to the original message ID
 
-    copyStringToPayload(reply->decoded.payload, response);
+    copyStringToPayload(reply->decoded.payload, response.substr(0, maxLength)); // Truncate to max size
 
     LOG_DEBUG("Replying to %u with: %s", source, response.c_str());
 
@@ -342,15 +358,16 @@ bool PositionUpdateReplyModule::matchesCodeWord(std::string const &message, size
     std::string const  codeWords    = config.start_code_word;
     auto        const  numCodeWords = getNumValues(codeWords);
 
-    icodeWord = 0;
     if(     numCodeWords == 0) { return equalIgnoreCase(message, "start"); }
     else if(numCodeWords == 1) { return equalIgnoreCase(message, codeWords); }
 
-    for(icodeWord = 0; icodeWord < numCodeWords; ++icodeWord) {
+    for(size_t i = 0; i < numCodeWords; ++i) {
         std::string codeWord;
-        getIthValue(codeWords, codeWord, icodeWord);
-        if(equalIgnoreCase(message, codeWord))
+        getIthValue(codeWords, codeWord, i);
+        if(equalIgnoreCase(message, codeWord)) {
+            icodeWord = i;
             return true;
+        }
     }
 
     return false;
@@ -375,7 +392,7 @@ GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) cons
     GeoCoord local(gpsStatus->getLatitude(), gpsStatus->getLongitude(), gpsStatus->getAltitude());
 
     size_t index = 0;
-    if(getSourceIndex(source, index)) {
+    if(!getSourceIndex(source, index)) {
         LOG_INFO("Source node %u not monitored, returning gps position", source);
         return local;
     }
@@ -400,6 +417,8 @@ GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) cons
 
     auto const lat = std::atof(lat_lon.substr(0, pos).c_str());
     auto const lon = std::atof(lat_lon.substr(pos+1 ).c_str());
+
+    LOG_INFO("Using lat/lon %f, %f %f for index %zu", lat, lon, local.getAltitude(), index);
 
     local.updateCoords(lat, lon, local.getAltitude());
 
