@@ -18,6 +18,7 @@
 #include "MeshService.h"
 
 #include "DirectMessageReplyModule.h" // For reply_utils::... functions
+#include "ReplyUtils.h"
 
 /// #defines to promote debug and info messages to make them stand out
 #ifdef DEBUG_AS_INFO
