@@ -165,11 +165,11 @@ void setupModules()
 #if !MESHTASTIC_EXCLUDE_PKI
     keyVerificationModule = new KeyVerificationModule();
 #endif
-#if !MESHTASTIC_EXCLUDE_DIRECTMESSAGEREPLY
-        DirectMessageReplyModule::getInstance();
-#endif
 #if !MESHTASTIC_EXCLUDE_POSITIONUPDATEREPLY
         PositionUpdateReplyModule::getInstance();
+#endif
+#if !MESHTASTIC_EXCLUDE_DIRECTMESSAGEREPLY
+        DirectMessageReplyModule::getInstance();
 #endif
 #if !MESHTASTIC_EXCLUDE_DROPZONE
     dropzoneModule = new DropzoneModule();

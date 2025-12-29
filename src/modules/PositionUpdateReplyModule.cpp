@@ -153,7 +153,7 @@ Send "stop" to disable.)";
             + toStringPrecision(1, config.next_node_distance) + "m of this node.");
 
         sendReply(mp, response);
-        return ProcessMessage::CONTINUE;
+        return ProcessMessage::STOP;
     }
 
     if(equalIgnoreCase(message, "stop")) {
@@ -165,7 +165,7 @@ Send "stop" to disable.)";
         LOG_DEBUG("Stopping monitoring node: %u", source);
         m_monitored.erase(source);
         sendReply(mp, "Position update replys disabled. Send \"" + (isCodeWord ? std::string{"<codeword>"} : "start") + "\" to enable.");
-        return ProcessMessage::CONTINUE;
+        return ProcessMessage::STOP;
     }
 
     if(equalIgnoreCase(message, "status")) {
@@ -179,7 +179,7 @@ Send "stop" to disable.)";
         addToResponseIf(monitored && index > 0, response, "Code word index: "    + std::to_string(index), "\n");
 
         sendReply(mp, response);
-        return ProcessMessage::CONTINUE;
+        return ProcessMessage::STOP;
     }
 
     return ProcessMessage::CONTINUE;
@@ -363,8 +363,11 @@ bool PositionUpdateReplyModule::matchesCodeWord(std::string const &message, size
 
     for(size_t i = 0; i < numCodeWords; ++i) {
         std::string codeWord;
-        getIthValue(codeWords, codeWord, i);
-        if(equalIgnoreCase(message, codeWord)) {
+        if(!getIthValue(codeWords, codeWord, i)) {
+            LOG_WARN("Unable to retrieve %luth codeword", i);
+            continue;
+        }
+        if(equalIgnoreCase(message, codeWord) || (codeWord.empty() && equalIgnoreCase(message, "start"))) {
             icodeWord = i;
             return true;
         }
