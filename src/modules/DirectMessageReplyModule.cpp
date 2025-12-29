@@ -127,13 +127,12 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
         addToResponseIf(condition, response, str, sep);
     };
 
-    _addToResponseIf(config.echo_user,           "User: "    + sourceShortName, "\n");
     _addToResponseIf(!isDM,                      "Channel: " + std::string(channels.getName(channel)), "\n");
-    _addToResponseIf(config.send_hops,           "Hop lim: " + std::to_string(mp.hop_limit) + "/" + std::to_string(mp.hop_start), "\n");
+    _addToResponseIf( config.send_hops,          "Hop lim: " + std::to_string(mp.hop_limit) + "/" + std::to_string(mp.hop_start), "\n");
+    _addToResponseIf(!config.send_hops,          "", "\n"); // Append newline if message isn't empty so far and not sending hops info
     _addToResponseIf(config.send_signal_metrics, "SNR: "     + toStringPrecision(1, mp.rx_snr)); // + " dB";
     _addToResponseIf(config.send_signal_metrics, "RSSI: "    + std::to_string(mp.rx_rssi));     // + " dBm";
-
-    _addToResponseIf(config.echo_message, message, "\n");
+    _addToResponseIf(config.echo_message, sourceShortName + ": " + message, "\n");
 
     sendReply(mp, response);
 
