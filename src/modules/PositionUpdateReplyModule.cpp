@@ -18,20 +18,21 @@
 #include "MeshService.h"
 
 #include "DirectMessageReplyModule.h" // For reply_utils::... functions
+#include "DebugConfiguration.h"
 #include "ReplyUtils.h"
 
-/// #defines to promote debug and info messages to make them stand out
-#ifdef DEBUG_AS_INFO
-#   define LOG_DEBUG LOG_WARN
+#ifndef LOG_PREFIX_PUR
+/// Make messages cyan and add module specific prefix
+//#   define LOG_PREFIX_PUR "\u001b[36m" "[PosUpRep] "
+//#   define LOG_PREFIX_PUR "\u001b[31m" "[PosUpRep] "
+#   define LOG_PREFIX_PUR "[PosUpRep] "
 #endif
 
-#ifdef DEBUG_AS_WARN
-#   define LOG_DEBUG LOG_WARN
+#ifndef LOG_PREFIX
+#   define LOG_PREFIX LOG_PREFIX_PUR
 #endif
 
-#ifdef INFO_AS_WARN
-#   define LOG_INFO  LOG_WARN
-#endif
+#include "LogUtils.h"
 
 using namespace reply_utils;
 
@@ -91,7 +92,7 @@ PositionUpdateReplyModule::PositionUpdateReplyModule()
             , meshtastic_PortNum_POSITION_APP
         }
 ) {
-    LOG_DEBUG("PositionUpdateReplyModule constructor");
+    LOG_DEBUG_PFX("PositionUpdateReplyModule constructor");
 }
 
 namespace {
@@ -141,8 +142,8 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(const meshta
     if(matchesCodeWord(message, index)) {
         bool const isCodeWord = !equalIgnoreCase(message, "start");
 
-        if(!isCodeWord) LOG_DEBUG("Starting monitoring node: %u", source);
-        else            LOG_DEBUG("Received codeWord: %u, from node: %u", index, source);
+        if(!isCodeWord) LOG_DEBUG_PFX("Starting monitoring node: %u", source);
+        else            LOG_DEBUG_PFX("Received codeWord: %u, from node: %u", index, source);
 
         m_monitored[source] = index;
 
@@ -163,7 +164,7 @@ Send "stop" to disable.)";
         if(getCodeWord(index, codeWord))
             isCodeWord = !equalIgnoreCase(codeWord, "start");
 
-        LOG_DEBUG("Stopping monitoring node: %u", source);
+        LOG_DEBUG_PFX("Stopping monitoring node: %u", source);
         m_monitored.erase(source);
         sendReply(mp, "Position update replys disabled. Send \"" + (isCodeWord ? std::string{"<codeword>"} : "start") + "\" to enable.");
         return ProcessMessage::STOP;
@@ -197,7 +198,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     auto const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
 
     if(p.reply_id != 0) {
-        LOG_DEBUG("Skipping reply to message ID %u from %u", p.reply_id, source);
+        LOG_DEBUG_PFX("Skipping reply to message ID %u from %u", p.reply_id, source);
         return ProcessMessage::CONTINUE;
     }
 
@@ -205,14 +206,14 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
         return ProcessMessage::CONTINUE;
 
     if (mp.which_payload_variant != meshtastic_MeshPacket_decoded_tag) {
-        LOG_DEBUG("Skipping non-decoded payload with tag: %u", mp.which_payload_variant);
+        LOG_DEBUG_PFX("Skipping non-decoded payload with tag: %u", mp.which_payload_variant);
         return ProcessMessage::CONTINUE;
     }
 
     meshtastic_Position pos;
     memset(&pos, 0, sizeof(pos));
     if(!pb_decode_from_bytes(p.payload.bytes, p.payload.size, &meshtastic_Position_msg, &pos)) {
-        LOG_ERROR("Error decoding position protobuf!");
+        LOG_ERROR_PFX("Error decoding position protobuf!");
         return ProcessMessage::STOP;
     }
 
@@ -304,7 +305,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceived(const meshtastic_MeshPa
     auto const &p      = mp.decoded;
 
     if (!config.enabled) {
-        LOG_DEBUG("PositionUpdateReplyModule is disabled, ignoring message");
+        LOG_DEBUG_PFX("PositionUpdateReplyModule is disabled, ignoring message");
         return ProcessMessage::CONTINUE;
     }
 
@@ -312,7 +313,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceived(const meshtastic_MeshPa
         case meshtastic_PortNum_TEXT_MESSAGE_APP: return handleReceivedTextMessage(mp);
         case meshtastic_PortNum_POSITION_APP:     return handleReceivedPosition(   mp);
         default:
-            LOG_DEBUG("PositionUpdateReplyModule ignoring packet on port %d", p.portnum);
+            LOG_DEBUG_PFX("PositionUpdateReplyModule ignoring packet on port %d", p.portnum);
             break;
     }
 
@@ -336,7 +337,7 @@ void PositionUpdateReplyModule::sendReply(
 
     copyStringToPayload(reply->decoded.payload, response.substr(0, maxLength)); // Truncate to max size
 
-    LOG_DEBUG("Replying to %u with: %s", source, response.c_str());
+    LOG_DEBUG_PFX("Replying to %u with: %s", source, response.c_str());
 
     service->sendToMesh(reply, RX_SRC_LOCAL);
 }
@@ -365,7 +366,7 @@ bool PositionUpdateReplyModule::matchesCodeWord(std::string const &message, size
     for(size_t i = 0; i < numCodeWords; ++i) {
         std::string codeWord;
         if(!getIthValue(codeWords, codeWord, i)) {
-            LOG_WARN("Unable to retrieve %luth codeword", i);
+            LOG_WARN_PFX("Unable to retrieve %luth codeword", i);
             continue;
         }
         if(equalIgnoreCase(message, codeWord) || (codeWord.empty() && equalIgnoreCase(message, "start"))) {
@@ -397,32 +398,32 @@ GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) cons
 
     size_t index = 0;
     if(!getSourceIndex(source, index)) {
-        LOG_INFO("Source node %u not monitored, returning gps position", source);
+        LOG_INFO_PFX("Source node %u not monitored, returning gps position", source);
         return local;
     }
 
     std::string lat_lon;
     if(!getIthValue(getConfig().lat_lons, lat_lon, index)) {
-        LOG_INFO("No lat/lon set for index %zu, returning gps position", index);
+        LOG_INFO_PFX("No lat/lon set for index %lu, returning gps position", index);
         return local;
     }
 
     if(lat_lon.empty()) {
-        LOG_INFO("Empty lat/lon returning gps position");
+        LOG_INFO_PFX("Empty lat/lon returning gps position");
         return local;
     }
 
     auto const pos = lat_lon.find(',');
 
     if(pos == std::string::npos) {
-        LOG_ERROR("Invalid lat/lon, returning gps position");
+        LOG_ERROR_PFX("Invalid lat/lon, returning gps position");
         return local;
     }
 
     auto const lat = std::atof(lat_lon.substr(0, pos).c_str());
     auto const lon = std::atof(lat_lon.substr(pos+1 ).c_str());
 
-    LOG_INFO("Using lat/lon %f, %f %f for index %zu", lat, lon, local.getAltitude(), index);
+    LOG_INFO_PFX("Using lat/lon %f, %f %.1f for index %lu", lat, lon, local.getAltitude(), index);
 
     local.updateCoords(lat, lon, local.getAltitude());
 
@@ -437,7 +438,7 @@ void PositionUpdateReplyModule::getNextNodeCode(uint32_t const source, std::stri
     auto const  numNextCodeWords = getNumValues(config.next_code_word);
 
     if(numNextNodes > 0 && numNextCodeWords > 0 && numNextNodes != numNextCodeWords) {
-        LOG_WARN("PositionUpdateReplyModule: next_node has %zu entries, but next_code_word has %zu entries!", numNextNodes, numNextCodeWords);
+        LOG_WARN_PFX("PositionUpdateReplyModule: next_node has %lu entries, but next_code_word has %lu entries!", numNextNodes, numNextCodeWords);
     }
 
     nextNode.clear();

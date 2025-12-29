@@ -16,6 +16,20 @@
 #include "main.h"
 #include "ReplyUtils.h"
 
+#ifndef LOG_PREFIX_DMR
+/// Make messages cyan and add module specific prefix
+//#   define LOG_PREFIX_DMR "\u001b[36m" "[DirMsgRep] "
+//#   define LOG_PREFIX_DMR "\u001b[31m" "[DirMsgRep] "
+#   define LOG_PREFIX_DMR "[DirMsgRep] "
+#endif
+
+#ifndef LOG_PREFIX
+#   define LOG_PREFIX LOG_PREFIX_DMR
+#endif
+
+#include "LogUtils.h"
+
+
 using namespace reply_utils;
 
 /// This module automatically replies to direct messages with pre-configured responses.
@@ -60,7 +74,7 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
     auto const &config = moduleConfig.direct_message_reply;
 
     if (!config.enabled) {
-        LOG_DEBUG("DirectMessageReplyModule is disabled, ignoring message");
+        LOG_DEBUG_PFX("DirectMessageReplyModule is disabled, ignoring message");
         return ProcessMessage::CONTINUE;
     }
 
@@ -74,12 +88,12 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
     std::string const message{reinterpret_cast<const char *>(p.payload.bytes), p.payload.size};
 
     if (p.reply_id != 0) {
-        LOG_DEBUG("Skipping reply to message ID %u from %u", p.reply_id, source);
+        LOG_DEBUG_PFX("Skipping reply to message ID %u from %u", p.reply_id, source);
         return ProcessMessage::CONTINUE;
     }
 
     if (dest != myID) {
-        LOG_DEBUG("Ignoring message not for us(%u) decoded dest: %u packet dest: %u", myID, p.dest, mp.to);
+        LOG_DEBUG_PFX("Ignoring message not for us(%u) decoded dest: %u packet dest: %u", myID, p.dest, mp.to);
         return ProcessMessage::CONTINUE;
     }
 
@@ -89,29 +103,29 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
 
     size_t     iresponse    = 0;
     if(numQueries > 1 && numQueries != numResponses) {
-        LOG_WARN("DirectMessageReplyModule: number of queries (%zu) is > 1 and does not match number of responses (%zu)", numQueries, numResponses);
+        LOG_WARN_PFX("DirectMessageReplyModule: number of queries (%zu) is > 1 and does not match number of responses (%zu)", numQueries, numResponses);
     }
 
     // If there are no queries, or only one query and it matches the message
     if(numQueries == 0 || (numQueries == 1 && equalIgnoreCase(message, config.queries))) {
         if(numResponses <= 1) {
             iresponse = 0;
-            LOG_DEBUG("DirectMessageReplyModule: 0 or 1 queries and 1 response");
+            LOG_DEBUG_PFX("DirectMessageReplyModule: 0 or 1 queries and 1 response");
         } else { // 0 or 1 queries and multiple responses; choose response based on source address
             iresponse = (source % numResponses);
-            LOG_DEBUG("DirectMessageReplyModule: 0 or 1 queries and >1 response responding with response %zu", iresponse);
+            LOG_DEBUG_PFX("DirectMessageReplyModule: 0 or 1 queries and >1 response responding with response %zu", iresponse);
         }
     } else if(numQueries > 1) {
         // If more than 1 query, see if any match the message, and use corresponding response
         if(findMatch(config.queries, message, iresponse)) {
             if(iresponse < numResponses) {
-                LOG_DEBUG("DirectMessageReplyModule: matched query index %zu", iresponse);
+                LOG_DEBUG_PFX("DirectMessageReplyModule: matched query index %zu", iresponse);
             } else {
-                LOG_ERROR("DirectMessageReplyModule: matched query index %zu has no corresponding response (only %zu responses) falling a back to 0", iresponse, numResponses);
+                LOG_ERROR_PFX("DirectMessageReplyModule: matched query index %zu has no corresponding response (only %zu responses) falling a back to 0", iresponse, numResponses);
             }
         } else { // Otherwise, use the first response
             iresponse = 0;
-            LOG_DEBUG("DirectMessageReplyModule: no match found, using response 0");
+            LOG_DEBUG_PFX("DirectMessageReplyModule: no match found, using response 0");
         }
     }
 
@@ -160,7 +174,7 @@ void DirectMessageReplyModule::sendReply(
 
     copyStringToPayload(reply->decoded.payload, response);
 
-    LOG_DEBUG("Replying to %u with: %s", source, response.c_str());
+    LOG_DEBUG_PFX("Replying to %u with: %s", source, response.c_str());
 
     service->sendToMesh(reply, RX_SRC_LOCAL);
 }

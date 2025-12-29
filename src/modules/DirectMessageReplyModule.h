@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "SinglePortModule.h"
 #include "Singleton.h"
 #include "mesh/generated/meshtastic/mesh.pb.h"
