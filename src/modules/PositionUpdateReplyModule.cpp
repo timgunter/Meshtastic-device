@@ -443,29 +443,38 @@ void PositionUpdateReplyModule::getNextNodeCode(uint32_t const source, std::stri
     nextNode.clear();
     nextCodeWord.clear();
 
-    if(numNextNodes == 1) {
-        nextNode = config.next_node;
-    } else if(numNextNodes > 1) {
-        getIthValue(config.next_node, nextNode, (source % numNextNodes));
-    } else if(numNextNodes == 0 && numCodeWords > 0) {
-        /// Next node is this node
-        nextNode = getNodeLongName();
+    /// If only one code word for this node, use (source % numNext) to lookup next node/code
+    if(numCodeWords <= 1) {
+        /// Retrieve (source % numNextNodes)th value
+        getIthValueModNum(config.next_node,      nextNode,     source, numNextNodes    );
+        getIthValueModNum(config.next_code_word, nextCodeWord, source, numNextCodeWords);
+
+        LOG_INFO_PFX("Lookup next node by (source %% numNext): (%u, %lu) node: %s", source, numNextNodes,     nextNode.c_str());
+        LOG_INFO_PFX("Lookup next code by (source %% numNext): (%u, %lu) code: %s", source, numNextCodeWords, nextCodeWord.c_str());
+        return;
     }
 
-    if(numNextCodeWords == 1) {
-        nextCodeWord = config.next_code_word;
-    } else if(numNextCodeWords > 1) {
-        getIthValue(config.next_code_word, nextCodeWord, (source % numNextCodeWords));
-    } else if(numNextCodeWords == 0 && numCodeWords > 0) {
-        /// Retrieve code word from next in list of start code words for this node
-        size_t index = 0;
-        getSourceIndex(source, index);
+    /// If multiple code words for this node, lookup by the index for the currently active code word for this source
+    assert(numCodeWords > 1);
 
-        ++index;
-        if(!getCodeWord(index, nextCodeWord)) {
+    size_t index = 0;
+    getSourceIndex(source, index);
+
+    if(numNextNodes     > 0) { getIthValueModNum(config.next_node, nextNode, index, numNextNodes); }
+    else                     { nextNode = getNodeLongName(); }
+
+    if(numNextCodeWords > 0) { getIthValueModNum(config.next_code_word, nextCodeWord, index, numNextCodeWords); }
+    else { /// Next code words not set, retrieve code word from next in list of code words for this node
+        assert(numNextCodeWords == 0);
+
+        if(!getCodeWord(index+1, nextCodeWord)) {
             /// If not found, we are out of code words and have reached the end
             if(numNextNodes == 0)
                 nextNode = "winner!";
         }
     }
+
+    LOG_INFO_PFX("Lookup next node by active code word for source %u (index %% numNext): (%u, %lu) node: %s", source, index, numNextNodes,     nextNode.c_str());
+    LOG_INFO_PFX("Lookup next code by active code word for source %u (index %% numNext): (%u, %lu) code: %s", source, index, numNextCodeWords, nextCodeWord.c_str());
+    return;
 }
