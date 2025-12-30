@@ -124,6 +124,12 @@ namespace reply_utils {
         return false;
     }
 
+    /// Retrieve Ith(0-based) value modulo N from a delimited list of values(if N == 0, getNumValues(values) will be used)
+    bool getIthValueModNum(std::string const &values, std::string &value, size_t const I, size_t N, char const delim) {
+        if(N == 0) N = getNumValues(values, delim);
+        return getIthValue(values, value, (I % N), delim);
+    }
+
     // Check if we need a separator and add string to response
     void addToResponse(std::string &response, std::string const &str, char const *sep) {
         if (str.empty()) return;

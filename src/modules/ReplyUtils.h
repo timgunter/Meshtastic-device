@@ -38,6 +38,9 @@ namespace reply_utils {
     /// Retrieve Ith(0-based) value from a delimited list of values
     bool getIthValue(std::string const &values, std::string &value, size_t const I, char const delim = '|');
 
+    /// Retrieve Ith(0-based) value modulo N from a delimited list of values(if N == 0, getNumValues(values) will be used)
+    bool getIthValueModNum(std::string const &values, std::string &value, size_t const I, size_t N = 0, char const delim = '|');
+
     /// Append a string to a response string with a separator
     void addToResponse(std::string &response, std::string const &str, char const *sep = " ");
 

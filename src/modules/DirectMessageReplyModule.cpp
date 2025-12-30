@@ -100,39 +100,27 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
     auto const numQueries   = getNumValues(config.queries);
     auto const numResponses = getNumValues(config.responses);
 
-    size_t     iresponse    = 0;
     if(numQueries > 1 && numQueries != numResponses) {
         LOG_WARN_PFX("DirectMessageReplyModule: number of queries (%lu) is > 1 and does not match number of responses (%lu)", numQueries, numResponses);
     }
 
+    size_t      iresponse = 0;
+    std::string response;
+
     // If there are no queries, or only one query and it matches the message
     if(numQueries == 0 || (numQueries == 1 && equalIgnoreCase(message, config.queries))) {
-        if(numResponses <= 1) {
-            iresponse = 0;
-            LOG_DEBUG_PFX("DirectMessageReplyModule: 0 or 1 queries and 1 response");
-        } else { // 0 or 1 queries and multiple responses; choose response based on source address
-            iresponse = (source % numResponses);
-            LOG_DEBUG_PFX("DirectMessageReplyModule: 0 or 1 queries and >1 response responding with response %lu", iresponse);
-        }
+        // 0 or 1 queries and multiple responses; choose response based on (source % numResponses)
+        getIthValueModNum(config.responses, response, iresponse, numResponses);
+        LOG_DEBUG_PFX("Lookup response by (source %% numResp): (%u, %lu) nqueries: %lu response[%lu]: %s", source, numResponses, numQueries, iresponse, response.c_str());
     } else if(numQueries > 1) {
         // If more than 1 query, see if any match the message, and use corresponding response
         if(findMatch(config.queries, message, iresponse)) {
-            if(iresponse < numResponses) {
-                LOG_DEBUG_PFX("DirectMessageReplyModule: matched query index %lu", iresponse);
-            } else {
-                LOG_ERROR_PFX("DirectMessageReplyModule: matched query index %lu has no corresponding response (only %lu responses) falling a back to 0", iresponse, numResponses);
-            }
+            LOG_DEBUG_PFX("matched query index %lu", iresponse);
         } else { // Otherwise, use the first response
             iresponse = 0;
-            LOG_DEBUG_PFX("DirectMessageReplyModule: no match found, using response 0");
+            LOG_DEBUG_PFX("no match found, using response 0");
         }
-    }
-
-    std::string response;
-
-    if(iresponse >= numResponses && numResponses > 0) {
-        response = "Invalid DirectMessageReplyModule configuration";
-    } else {
+        assert(iresponse < numResponses);
         getIthValue(config.responses, response, iresponse);
     }
 
