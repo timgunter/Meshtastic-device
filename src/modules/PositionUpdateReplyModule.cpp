@@ -23,8 +23,7 @@
 
 #ifndef LOG_PREFIX_PUR
 /// Make messages cyan and add module specific prefix
-//#   define LOG_PREFIX_PUR "\u001b[36m" "[PosUpRep] "
-//#   define LOG_PREFIX_PUR "\u001b[31m" "[PosUpRep] "
+//#   define LOG_PREFIX_PUR "\u001b[36m" "[PosUpRep] " // Doesn't work. maybe due to use of vsnprintf in the logger?
 #   define LOG_PREFIX_PUR "[PosUpRep] "
 #endif
 

@@ -18,8 +18,7 @@
 
 #ifndef LOG_PREFIX_DMR
 /// Make messages cyan and add module specific prefix
-//#   define LOG_PREFIX_DMR "\u001b[36m" "[DirMsgRep] "
-//#   define LOG_PREFIX_DMR "\u001b[31m" "[DirMsgRep] "
+//#   define LOG_PREFIX_DMR "\u001b[36m" "[DirMsgRep] " // Doesn't work. maybe due to use of vsnprintf in the logger?
 #   define LOG_PREFIX_DMR "[DirMsgRep] "
 #endif
 
@@ -103,7 +102,7 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
 
     size_t     iresponse    = 0;
     if(numQueries > 1 && numQueries != numResponses) {
-        LOG_WARN_PFX("DirectMessageReplyModule: number of queries (%zu) is > 1 and does not match number of responses (%zu)", numQueries, numResponses);
+        LOG_WARN_PFX("DirectMessageReplyModule: number of queries (%lu) is > 1 and does not match number of responses (%lu)", numQueries, numResponses);
     }
 
     // If there are no queries, or only one query and it matches the message
@@ -113,15 +112,15 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
             LOG_DEBUG_PFX("DirectMessageReplyModule: 0 or 1 queries and 1 response");
         } else { // 0 or 1 queries and multiple responses; choose response based on source address
             iresponse = (source % numResponses);
-            LOG_DEBUG_PFX("DirectMessageReplyModule: 0 or 1 queries and >1 response responding with response %zu", iresponse);
+            LOG_DEBUG_PFX("DirectMessageReplyModule: 0 or 1 queries and >1 response responding with response %lu", iresponse);
         }
     } else if(numQueries > 1) {
         // If more than 1 query, see if any match the message, and use corresponding response
         if(findMatch(config.queries, message, iresponse)) {
             if(iresponse < numResponses) {
-                LOG_DEBUG_PFX("DirectMessageReplyModule: matched query index %zu", iresponse);
+                LOG_DEBUG_PFX("DirectMessageReplyModule: matched query index %lu", iresponse);
             } else {
-                LOG_ERROR_PFX("DirectMessageReplyModule: matched query index %zu has no corresponding response (only %zu responses) falling a back to 0", iresponse, numResponses);
+                LOG_ERROR_PFX("DirectMessageReplyModule: matched query index %lu has no corresponding response (only %lu responses) falling a back to 0", iresponse, numResponses);
             }
         } else { // Otherwise, use the first response
             iresponse = 0;
