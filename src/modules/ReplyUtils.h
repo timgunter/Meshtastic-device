@@ -2,6 +2,10 @@
 
 #include <string>
 
+#include "mesh/generated/meshtastic/mesh.pb.h"
+
+#include "Channels.h"
+
 /// Do these belong in a better more general location?
 namespace reply_utils {
     /// Convert float to string with specified precision
@@ -46,4 +50,34 @@ namespace reply_utils {
 
     /// Append a string to a response string if a condition is true
     void addToResponseIf(bool const condition, std::string &response, std::string const &str, char const *sep = " ");
+
+    /// Get source from packet
+    uint32_t getSource(meshtastic_MeshPacket const &mp);
+
+    /// Get message from packet
+    std::string getMessage(meshtastic_MeshPacket const &mp);
+
+    /// Reply to sender of mp. Fills out destination, copies response and sends
+    void sendReply(
+        const   meshtastic_MeshPacket &mp
+        , meshtastic_MeshPacket       *reply
+        , const std::string           &response
+        , const uint32_t               channel   = 0
+        , const size_t                 maxLength = 226
+    );
+
+    /// Inline functions
+
+    /// Returns true if pos represents end of string (npos)
+    inline bool atEnd(std::string::size_type const pos) { return pos == std::string::npos; }
+
+    /// Get source from packet
+    inline uint32_t getSource(meshtastic_MeshPacket const &mp) {
+        return (mp.decoded.source ? mp.decoded.source : mp.from); // Does this always come from mp?
+    }
+
+    /// Get message from packet
+    inline std::string getMessage(meshtastic_MeshPacket const &mp) {
+        return std::string{reinterpret_cast<const char *>(mp.decoded.payload.bytes), mp.decoded.payload.size};
+    }
 }

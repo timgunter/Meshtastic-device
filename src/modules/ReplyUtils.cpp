@@ -1,4 +1,4 @@
-#include "DirectMessageReplyModule.h"
+#include "ReplyUtils.h"
 
 #include <cassert>
 #include <cstring>
@@ -8,6 +8,8 @@
 #include <sstream>
 
 #include <algorithm>
+
+#include "mesh/generated/meshtastic/mesh.pb.h"
 
 #include "Meshservice.h"
 //#include "configuration.h"
@@ -74,10 +76,6 @@ namespace reply_utils {
         else                         return str.substr(start, end - start);
     }
 
-    bool atEnd(std::string::size_type const pos) {
-        return pos == std::string::npos;
-    }
-
     /// Set start to current end, and increment past delimiter
     void setStart(std::string::size_type &start, std::string::size_type const end) {
         start = end;
@@ -140,6 +138,30 @@ namespace reply_utils {
 
     // Add to response if condition is true
     void addToResponseIf(bool const condition, std::string &response, std::string const &str, char const *sep) {
-        if (condition) addToResponse(response, str, sep);
+        if(condition) addToResponse(response, str, sep);
     };
+
+    /// Reply to sender of mp. Fills out destination, copies response and sends
+    void sendReply(
+        const   meshtastic_MeshPacket &mp
+        , meshtastic_MeshPacket       *reply
+        , const std::string           &response
+        , const uint32_t               channel
+        , const size_t                 maxLength
+    ) {
+        auto const source = reply_utils::getSource(mp);
+
+        if (channel > 0 && isPrivateChannel(channel))
+            reply->channel = channel;
+        else
+            reply->to = source; // Reply to the source of the original message
+
+        assert(reply->from == nodeDB->getNodeNum()); // Should always be our node number
+
+        reply->decoded.reply_id = mp.id; // Set the reply ID to the original message ID
+
+        reply_utils::copyStringToPayload(reply->decoded.payload, response.substr(0, maxLength)); // Truncate to max size
+
+        service->sendToMesh(reply, RX_SRC_LOCAL);
+    }
 } // namespace reply_utils

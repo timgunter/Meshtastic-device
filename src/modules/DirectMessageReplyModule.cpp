@@ -65,26 +65,22 @@ DirectMessageReplyModule::ConfigType DirectMessageReplyModule::getDefaultConfig(
     return config;
 }
 
-void DirectMessageReplyModule::setDefault() {
-    moduleConfig.direct_message_reply = getDefaultConfig();
-}
-
-ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPacket &mp) {
-    auto const &config = moduleConfig.direct_message_reply;
+ProcessMessage DirectMessageReplyModule::handleReceived(meshtastic_MeshPacket const &mp) {
+    auto const &config = getConfig();
 
     if (!config.enabled) {
         LOG_DEBUG_PFX("DirectMessageReplyModule is disabled, ignoring message");
         return ProcessMessage::CONTINUE;
     }
 
-    auto        const &channel        = mp.channel;
-    auto        const &p              = mp.decoded;
-    auto        const &source         = (p.source ? p.source : mp.from); // Does this always come from mp?
-    auto        const &dest           = (p.dest ? p.dest : mp.to);
-    auto        const &myID           = nodeDB->getNodeNum();
-    bool        const isDM            = (dest != 0);
-    auto        const sourceShortName = getNodeShortName(source);
-    std::string const message{reinterpret_cast<const char *>(p.payload.bytes), p.payload.size};
+    auto        const &channel         = mp.channel;
+    auto        const &p               = mp.decoded;
+    auto        const  source          = getSource( mp);
+    std::string const  message         = getMessage(mp);
+    auto        const &dest            = (p.dest ? p.dest : mp.to);
+    auto        const &myID            = nodeDB->getNodeNum();
+    bool        const  isDM            = (dest != 0);
+    auto        const  sourceShortName = getNodeShortName(source);
 
     if (p.reply_id != 0) {
         LOG_DEBUG_PFX("Skipping reply to message ID %u from %u", p.reply_id, source);
@@ -142,26 +138,11 @@ ProcessMessage DirectMessageReplyModule::handleReceived(const meshtastic_MeshPac
 }
 
 void DirectMessageReplyModule::sendReply(
-    const   meshtastic_MeshPacket &mp
-    , const std::string           &response
+    meshtastic_MeshPacket const &mp
+    , std::string         const &response
 ) {
-    auto const &config = moduleConfig.direct_message_reply;
-    auto const &p      = mp.decoded;
-    auto const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
-    auto        reply  = allocDataPacket();
-
-    if (config.channel > 0 && isPrivateChannel(config.channel))
-        reply->channel = config.channel;
-    else
-        reply->to = source; // Reply to the source of the original message
-
-    assert(reply->from == nodeDB->getNodeNum()); // Should always be our node number
-
-    reply->decoded.reply_id = mp.id; // Set the reply ID to the original message ID
-
-    copyStringToPayload(reply->decoded.payload, response);
-
+    auto const source  = getSource(mp);
+    auto const channel = getConfig().channel;
     LOG_DEBUG_PFX("Replying to %u with: %s", source, response.c_str());
-
-    service->sendToMesh(reply, RX_SRC_LOCAL);
+    reply_utils::sendReply(mp, allocDataPacket(), response, channel);
 }

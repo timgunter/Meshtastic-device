@@ -56,8 +56,9 @@ class DirectMessageReplyModule : public SinglePortModule, public Singleton<Direc
 public:
   using ConfigType = meshtastic_ModuleConfig_DirectMessageReplyConfig;
 
-  static ConfigType getDefaultConfig();
-  static void       setDefault();
+  static ConfigType  getDefaultConfig();
+  static ConfigType &getConfig( ) { return moduleConfig.direct_message_reply; }
+  static void        setDefault() { getConfig() = getDefaultConfig(); }
 
   /// Constructor: name is for debugging output
   DirectMessageReplyModule() : SinglePortModule("directmessagereply", meshtastic_PortNum_TEXT_MESSAGE_APP) {
@@ -66,7 +67,8 @@ public:
 
 private:
   /// Called to handle a particular incoming message
-  ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;
+  ProcessMessage handleReceived(meshtastic_MeshPacket const &mp) override;
 
-  void sendReply(const meshtastic_MeshPacket &mp, const std::string &response);
+  /// Reply to sender of mp. Fills out destination, copies response and sends
+  void sendReply(meshtastic_MeshPacket const &mp, std::string const &response);
 };

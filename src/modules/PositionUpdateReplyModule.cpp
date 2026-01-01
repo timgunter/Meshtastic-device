@@ -36,9 +36,6 @@
 
 using namespace reply_utils;
 
-PositionUpdateReplyModule::ConfigType &PositionUpdateReplyModule::getConfig() {
-    return moduleConfig.position_update_reply;
-}
 
 /// The config.next_node and config.next_code_word can contain either a single
 /// next node/code word pair, or a '|' delimited list of nodes. If more than one
@@ -80,9 +77,6 @@ PositionUpdateReplyModule::ConfigType PositionUpdateReplyModule::getDefaultConfi
     return config;
 }
 
-void PositionUpdateReplyModule::setDefault() {
-    getConfig() = getDefaultConfig();
-}
 
 
 PositionUpdateReplyModule::PositionUpdateReplyModule()
@@ -93,7 +87,7 @@ PositionUpdateReplyModule::PositionUpdateReplyModule()
             , meshtastic_PortNum_POSITION_APP
         }
 ) {
-    LOG_DEBUG_PFX("PositionUpdateReplyModule constructor");
+    LOG_DEBUG_PFX("Constructing");
 }
 
 namespace {
@@ -129,33 +123,32 @@ namespace {
     inline float normalizeBearingRad(float const bearing) { return normalizeBearing(bearing, 2*PI); }
 } // namespace anonymous
 
-ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(const meshtastic_MeshPacket &mp) {
+ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(meshtastic_MeshPacket const &mp) {
     if(mp.decoded.portnum != meshtastic_PortNum_TEXT_MESSAGE_APP)
         return ProcessMessage::CONTINUE;
 
-    auto        const &config = getConfig();
-    auto        const &p      = mp.decoded;
-    auto        const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
-    std::string const message{reinterpret_cast<const char *>(p.payload.bytes), p.payload.size};
-    bool        const haveNextNode = hasNextNode(config) || (numCodeWords(config) > 1);
+    auto        const source          = getSource( mp);
+    std::string const message         = getMessage(mp);
+    bool        const haveNextNode    = hasNextNode();
+    std::string const nextNodeDistStr = toStringPrecision(1, getConfig().next_node_distance);
 
-    size_t index = 0;
+    size_t     index     = 0;
     bool const monitored = getSourceIndex(source, index);
 
     if(matchesCodeWord(message, index)) {
-        bool const isCodeWord = !equalIgnoreCase(message, "start");
+        bool const isCodeWord = !isDefaultCodeWord(message);
 
         if(!isCodeWord) LOG_DEBUG_PFX("Starting monitoring node: %u", source);
         else            LOG_DEBUG_PFX("Received codeWord: %u, from node: %u", index, source);
 
-        m_monitored[source] = index;
+        setSourceIndex(source, index);
 
         std::string response = R"(Position update replys enabled.
 Will respond to regular updates or "exchange position" requests.
 Send "stop" to disable.)";
 
         addToResponseIf(haveNextNode, response, "For clues about the next node, send a position update from within "
-            + toStringPrecision(1, config.next_node_distance) + "m of this node.");
+            + nextNodeDistStr + "m of this node.");
 
         sendReply(mp, response);
         return ProcessMessage::STOP;
@@ -165,22 +158,22 @@ Send "stop" to disable.)";
         bool isCodeWord = true;
         std::string codeWord;
         if(getCodeWord(index, codeWord))
-            isCodeWord = !equalIgnoreCase(codeWord, "start");
+            isCodeWord = !isDefaultCodeWord(message);
 
         LOG_DEBUG_PFX("Stopping monitoring node: %u", source);
-        m_monitored.erase(source);
-        sendReply(mp, "Position update replys disabled. Send \"" + (isCodeWord ? std::string{"<codeword>"} : "start") + "\" to enable.");
+        unsetSourceIndex(source);
+        sendReply(mp, "Position update replys disabled. Send \"" + std::string{isCodeWord ? "<codeword>" : s_defaultCodeWord} + "\" to enable.");
         return ProcessMessage::STOP;
     }
 
     if(equalIgnoreCase(message, "status")) {
-        bool const trackingSender = (m_monitored.count(source) > 0);
-        auto const num = m_monitored.size();
-        std::string response = "Position update replys enabled for " + std::to_string(num) + (num == 1 ? " node" : " nodes");
+        bool const monitored = isMonitored(source);
 
-        addToResponse(response, (trackingSender ? "including \"" : "not including \"") + getNodeShortName(source) + "\"");
+        std::string response = "Position update replys enabled for " + std::to_string(numMonitored()) + (numMonitored() == 1 ? " node" : " nodes");
+
+        addToResponse(response, (monitored ? "including \"" : "not including \"") + getNodeShortName(source) + "\"");
         /// Add next node distance if next node info set
-        addToResponseIf(haveNextNode,           response, "Next node distance: " + toStringPrecision(1, config.next_node_distance), "\n");
+        addToResponseIf(haveNextNode,           response, "Next node distance: " + nextNodeDistStr, "\n");
         addToResponseIf(monitored && index > 0, response, "Code word index: "    + std::to_string(index), "\n");
 
         sendReply(mp, response);
@@ -190,7 +183,7 @@ Send "stop" to disable.)";
     return ProcessMessage::CONTINUE;
 }
 
-ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtastic_MeshPacket &mp) {
+ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(meshtastic_MeshPacket const &mp) {
     static size_t constexpr max_next_node_length = 12;
 
     if(mp.decoded.portnum != meshtastic_PortNum_POSITION_APP)
@@ -198,14 +191,14 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
 
     auto const &config = getConfig();
     auto const &p      = mp.decoded;
-    auto const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
+    auto const  source = getSource(mp);
 
     if(p.reply_id != 0) {
         LOG_DEBUG_PFX("Skipping reply to message ID %u from %u", p.reply_id, source);
         return ProcessMessage::CONTINUE;
     }
 
-    if(m_monitored.count(source) == 0)
+    if(!isMonitored(source))
         return ProcessMessage::CONTINUE;
 
     if (mp.which_payload_variant != meshtastic_MeshPacket_decoded_tag) {
@@ -252,7 +245,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
 
     /// Next node info
     auto const &nextNodeDist = config.next_node_distance;
-    bool const  haveNextNode = hasNextNode(config);
+    bool const  haveNextNode = hasNextNode();
 
     /// If next node, and position is manually set, reject!
     if(haveNextNode && pos.location_source == meshtastic_Position_LocSource_LOC_MANUAL) {
@@ -303,20 +296,19 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     return ProcessMessage::CONTINUE;
 }
 
-ProcessMessage PositionUpdateReplyModule::handleReceived(const meshtastic_MeshPacket &mp) {
-    auto const &config = getConfig();
-    auto const &p      = mp.decoded;
-
-    if (!config.enabled) {
+ProcessMessage PositionUpdateReplyModule::handleReceived(meshtastic_MeshPacket const &mp) {
+    if (!getConfig().enabled) {
         LOG_DEBUG_PFX("PositionUpdateReplyModule is disabled, ignoring message");
         return ProcessMessage::CONTINUE;
     }
 
-    switch(p.portnum) {
+    auto const portnum = mp.decoded.portnum;
+
+    switch(portnum) {
         case meshtastic_PortNum_TEXT_MESSAGE_APP: return handleReceivedTextMessage(mp);
         case meshtastic_PortNum_POSITION_APP:     return handleReceivedPosition(   mp);
         default:
-            LOG_DEBUG_PFX("PositionUpdateReplyModule ignoring packet on port %d", p.portnum);
+            LOG_DEBUG_PFX("PositionUpdateReplyModule ignoring packet on port %d", portnum);
             break;
     }
 
@@ -324,46 +316,28 @@ ProcessMessage PositionUpdateReplyModule::handleReceived(const meshtastic_MeshPa
 }
 
 void PositionUpdateReplyModule::sendReply(
-    const   meshtastic_MeshPacket &mp
-    , const std::string           &response
-    , const size_t                 maxLength
+    meshtastic_MeshPacket const &mp
+    , std::string         const &response
 ) {
-    auto const &p      = mp.decoded;
-    auto const &source = (p.source ? p.source : mp.from); // Does this always come from mp?
-    auto        reply  = allocDataPacket();
-
-    reply->to = source; // Reply to the source of the original message
-
-    assert(reply->from == nodeDB->getNodeNum()); // Should always be our node number
-
-    reply->decoded.reply_id = mp.id; // Set the reply ID to the original message ID
-
-    copyStringToPayload(reply->decoded.payload, response.substr(0, maxLength)); // Truncate to max size
-
+    auto const source = getSource(mp);
     LOG_DEBUG_PFX("Replying to %u with: %s", source, response.c_str());
-
-    service->sendToMesh(reply, RX_SRC_LOCAL);
+    reply_utils::sendReply(mp, allocDataPacket(), response);
 }
 
-bool PositionUpdateReplyModule::hasLatLons(ConfigType const &config) {
-    return !std::string(config.lat_lons).empty();
-}
-
-bool PositionUpdateReplyModule::hasNextNode(ConfigType const &config) {
-    return !std::string(config.next_node).empty() || !std::string(config.next_code_word).empty();
-}
-
-size_t PositionUpdateReplyModule::numCodeWords(ConfigType const &config) {
-    return getNumValues(config.start_code_word);
+/// Returns true if configured to provide a clue to a subsquent node
+bool PositionUpdateReplyModule::hasNextNode() {
+    ConfigType const &config = getConfig();
+    return !std::string(config.next_node).empty()
+        || !std::string(config.next_code_word).empty()
+        || (getNumValues(config.start_code_word) > 1);
 }
 
 /// Check if message matches codeword
 bool PositionUpdateReplyModule::matchesCodeWord(std::string const &message, size_t &icodeWord) const {
-    auto        const &config       = getConfig();
-    std::string const  codeWords    = config.start_code_word;
-    auto        const  numCodeWords = getNumValues(codeWords);
+    std::string const codeWords    = getConfig().start_code_word;
+    auto        const numCodeWords = getNumValues(codeWords);
 
-    if(     numCodeWords == 0) { return equalIgnoreCase(message, "start"); }
+    if(     numCodeWords == 0) { return isDefaultCodeWord(message); }
     else if(numCodeWords == 1) { return equalIgnoreCase(message, codeWords); }
 
     for(size_t i = 0; i < numCodeWords; ++i) {
@@ -372,7 +346,7 @@ bool PositionUpdateReplyModule::matchesCodeWord(std::string const &message, size
             LOG_WARN_PFX("Unable to retrieve %luth codeword", i);
             continue;
         }
-        if(equalIgnoreCase(message, codeWord) || (codeWord.empty() && equalIgnoreCase(message, "start"))) {
+        if(equalIgnoreCase(message, codeWord) || (codeWord.empty() && isDefaultCodeWord(message))) {
             icodeWord = i;
             return true;
         }
@@ -384,13 +358,9 @@ bool PositionUpdateReplyModule::matchesCodeWord(std::string const &message, size
 /// Return true if source is being monitored and retrieve current source index
 bool PositionUpdateReplyModule::getSourceIndex(uint32_t const source, size_t &index) const {
     auto const iter  = m_monitored.find(source);
-    bool const found = (iter != m_monitored.end());
-    index = (!found ? 0 : iter->second);
-    return found;
-}
-
-bool PositionUpdateReplyModule::getCodeWord(size_t const index, std::string &codeWord) const {
-    return getIthValue(getConfig().start_code_word, codeWord, index);
+    if(iter == m_monitored.end()) return false;
+    index = iter->second;
+    return true;;
 }
 
 /// Retrieve current position to report against for source
@@ -542,10 +512,9 @@ void PositionUpdateReplyModule::getNextNodeCode(uint32_t const source, std::stri
     else { /// Next code words not set, retrieve code word from next in list of code words for this node
         assert(numNextCodeWords == 0);
 
-        if(!getCodeWord(index+1, nextCodeWord)) {
-            /// If not found, we are out of code words and have reached the end
-            if(numNextNodes == 0)
-                nextNode = "winner!";
+        /// If not found, we are out of code words and have reached the end
+        if(numNextNodes == 0 && !getCodeWord(index+1, nextCodeWord)) {
+            nextNode = "winner!";
         }
     }
 
