@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdlib>
+#include <cctype>
 
 #include <string>
 #include <iomanip>
@@ -74,6 +75,7 @@ PositionUpdateReplyModule::ConfigType PositionUpdateReplyModule::getDefaultConfi
     config.next_node_distance = 4.f;
 
     config.lat_lons[0] = '\0';
+    config.bearing_offset = 0.f;
 
     return config;
 }
@@ -105,24 +107,26 @@ namespace {
         return static_cast<float>(23905787.925008f * std::pow(0.5f, bits));
     }
 
-    float ilatLonToFloat(int32_t const ival) { return ival * 1e-7; }
-
     std::string geoCoordToString(GeoCoord const &val, uint32_t const nsats = 0) {
-        return std::to_string( ilatLonToFloat(val.getLatitude()))
-            + ", " + std::to_string(ilatLonToFloat(val.getLongitude()))
+        return std::to_string(      val.getLatAsDouble())
+            + ", " + std::to_string(val.getLonAsDouble())
             + ", " + std::to_string(val.getAltitude()) + "m"
             + std::string{nsats == 0 ? "" : " " + std::to_string(nsats) + "s"}
         ;
     }
 
+    inline float deg_to_rad(float const degrees) { return DEG_CONVERT*degrees; }
+    inline float rad_to_deg(float const radians) { return radians/DEG_CONVERT; }
+
     /// Normalize bearing to [0, 360)
-    float normalizeBearing(float const bearing) {
-        float normalized = std::fmod(bearing, 360.0f);
-        if (normalized < 0.0f) {
-            normalized += 360.0f;
-        }
+    inline float normalizeBearing(float const bearing, float const maxBearing = 360.f) {
+        float normalized = std::fmod(bearing, maxBearing);
+        if(normalized < 0.f) normalized += maxBearing;
         return normalized;
     }
+
+    /// Normalize bearing to [0, 2*PI)
+    inline float normalizeBearingRad(float const bearing) { return normalizeBearing(bearing, 2*PI); }
 } // namespace anonymous
 
 ProcessMessage PositionUpdateReplyModule::handleReceivedTextMessage(const meshtastic_MeshPacket &mp) {
@@ -228,7 +232,7 @@ ProcessMessage PositionUpdateReplyModule::handleReceivedPosition(const meshtasti
     auto const height          = local.getAltitude() - remote.getAltitude();
     auto const declination     = config.declination;
     bool const haveDecl        = (declination != 0.f);
-    auto const trueBearing     = normalizeBearing((180.f / M_PI) * remote.bearingTo(local));
+    auto const trueBearing     = normalizeBearing(rad_to_deg(remote.bearingTo(local)));
     auto const magBearing      = normalizeBearing(trueBearing - declination);
 
     assert(trueBearing >= 0.f && trueBearing < 360.f);
@@ -393,6 +397,8 @@ bool PositionUpdateReplyModule::getCodeWord(size_t const index, std::string &cod
 /// Source node is needed so that the index for the currently active code word for that
 /// node can be looked up and the corresponding lat/lon retrieved.
 GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) const {
+    auto const &config = getConfig();
+
     GeoCoord local(gpsStatus->getLatitude(), gpsStatus->getLongitude(), gpsStatus->getAltitude());
 
     size_t index = 0;
@@ -402,7 +408,7 @@ GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) cons
     }
 
     std::string lat_lon;
-    if(!getIthValue(getConfig().lat_lons, lat_lon, index)) {
+    if(!getIthValue(config.lat_lons, lat_lon, index)) {
         LOG_INFO_PFX("No lat/lon set for index %lu, returning gps position", index);
         return local;
     }
@@ -419,14 +425,83 @@ GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) cons
         return local;
     }
 
-    auto const lat = std::atof(lat_lon.substr(0, pos).c_str());
-    auto const lon = std::atof(lat_lon.substr(pos+1 ).c_str());
+    /// Trims last character if it is not a digit
+    auto trimLastChar = [](std::string const &str) {
+        if(str.empty()) return str;
+        if(std::isdigit(str.back())) return str;
+        return str.substr(0, str.size()-1);
+    };
 
-    LOG_INFO_PFX("Using lat/lon %f, %f %.1f for index %lu", lat, lon, local.getAltitude(), index);
+    auto const first     = lat_lon.substr(0, pos);
+    auto const second    = lat_lon.substr(pos+1 );
+    auto const firstVal  = std::atof(trimLastChar(first ).c_str());
+    auto const secondVal = std::atof(trimLastChar(second).c_str());
 
-    local.updateCoords(lat, lon, local.getAltitude());
+    if(first.empty() || second.empty()) {
+        LOG_ERROR_PFX("Missing first or second value in lat/lon pair, %s, %s", first.c_str(), second.c_str());
+        return local;
+    }
 
-    return local;
+    if(std::isdigit(second.back())) {
+        auto const lat = firstVal;
+        auto const lon = secondVal;
+
+        LOG_INFO_PFX("Using lat/lon %f, %f %.1f for index %lu", lat, lon, local.getAltitude(), index);
+
+        local.updateCoords(lat, lon, local.getAltitude());
+        return local;
+    }
+
+    /// If last char in second value is not a digit, values are either an easting and a northing
+    /// or a bearing and a range relative to the node's gps position. Examples:
+
+    ///  100,200m  =>  100 meter easting and  200 meter northing
+    /// -100,200n  => -100 meter easting and  200 meter northing
+    ///  100w,200n => -100 meter easting and  200 meter northing
+    /// 100e,-200n =>  100 meter easting and -200 meter northing
+    /// 100e,200s  =>  100 meter easting and -200 meter northing
+    /// 270d,300m  =>  270 degree bearing and 300 meter range
+
+    /// Returns true if lower(last char) matches lower(chr || chr2 || chr3)
+    auto lastCharIs = [](std::string const &str, char const chr, char const chr2 = '\0', char const chr3 = '\0') {
+        char const back = std::tolower(str.back());
+        return !str.empty() && (back == std::tolower(chr) || back == std::tolower(chr2) || back == std::tolower(chr3));
+    };
+
+    // Last value is either in meters or a northing
+    assert(lastCharIs(second, 'm', 'n', 's'));
+
+    double bearing{};
+    double range{};
+
+    // First value is either in meters or an easting(if no char specifier, assume easting)
+    if(lastCharIs(first, 'm', 'e', 'w') || std::isdigit(first.back())) {
+        auto const easting  = firstVal  * (lastCharIs(first,  'w') ? -1 : 1);
+        auto const northing = secondVal * (lastCharIs(second, 's') ? -1 : 1);
+        bearing = std::atan2(easting, northing);
+        range   = std::hypot(easting, northing);
+    // First value is a bearing in degrees
+    } else if(lastCharIs(first, 'd')) {
+        bearing  = deg_to_rad(firstVal);
+        range    = secondVal;
+    }
+
+    if(config.bearing_offset != 0.f) {
+        auto const bearing_orig = bearing;
+        bearing += deg_to_rad(config.bearing_offset);
+        if(bearing <  0   ) bearing += 2*PI;
+        if(bearing >= 2*PI) bearing -= 2*PI;
+        LOG_INFO_PFX("Rotating bearing by %f degrees %f => %f", config.bearing_offset, rad_to_deg(bearing_orig), rad_to_deg(bearing));
+    }
+
+    auto local_new = *local.pointAtDistance(bearing, range);
+    LOG_INFO_PFX("Using lat/lon %f, %f %.1f for index %lu bearing: %f range: %f"
+        , local_new.getLatAsDouble()
+        , local_new.getLonAsDouble()
+        , local_new.getAltitude(), index, rad_to_deg(bearing), range
+    );
+
+    return local_new;
 }
 
 /// Retrieve next node and next code word in sequence
