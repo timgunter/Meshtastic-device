@@ -112,6 +112,8 @@ class GeoCoord
     int32_t getLatitude() const { return _latitude; }
     int32_t getLongitude() const { return _longitude; }
     int32_t getAltitude() const { return _altitude; }
+    double  getLatAsDouble() const { return 1e-7*getLatitude(); }
+    double  getLonAsDouble() const { return 1e-7*getLongitude(); }
 
     // DMS getters
     uint8_t getDMSLatDeg() const { return _dms.latDeg; }
