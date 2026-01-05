@@ -36,7 +36,6 @@
 
 using namespace reply_utils;
 
-
 /// The config.next_node and config.next_code_word can contain either a single
 /// next node/code word pair, or a '|' delimited list of nodes. If more than one
 /// pair is set, the address of the sender will be used to determine which pair
@@ -76,8 +75,6 @@ PositionUpdateReplyModule::ConfigType PositionUpdateReplyModule::getDefaultConfi
 
     return config;
 }
-
-
 
 PositionUpdateReplyModule::PositionUpdateReplyModule()
 : MultiPortModule(
@@ -452,15 +449,14 @@ GeoCoord PositionUpdateReplyModule::getLocalGeoCoord(uint32_t const source) cons
         range   = std::hypot(easting, northing);
     // First value is a bearing in degrees
     } else if(lastCharIs(first, 'd')) {
-        bearing  = deg_to_rad(firstVal);
-        range    = secondVal;
+        bearing = deg_to_rad(firstVal);
+        range   = secondVal;
     }
 
     if(config.bearing_offset != 0.f) {
         auto const bearing_orig = bearing;
         bearing += deg_to_rad(config.bearing_offset);
-        if(bearing <  0   ) bearing += 2*PI;
-        if(bearing >= 2*PI) bearing -= 2*PI;
+        bearing  = normalizeBearingRad(bearing);
         LOG_INFO_PFX("Rotating bearing by %f degrees %f => %f", config.bearing_offset, rad_to_deg(bearing_orig), rad_to_deg(bearing));
     }
 
