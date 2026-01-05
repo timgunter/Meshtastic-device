@@ -94,6 +94,10 @@
 #include "modules/SerialModule.h"
 #endif
 
+#if !MESHTASTIC_EXCLUDE_DIRECTMESSAGEREPLY
+#include "modules/DirectMessageReplyModule.h"
+#endif
+
 #if !MESHTASTIC_EXCLUDE_DROPZONE
 #include "modules/DropzoneModule.h"
 #endif
@@ -156,6 +160,9 @@ void setupModules()
 #endif
 #if !MESHTASTIC_EXCLUDE_PKI
     keyVerificationModule = new KeyVerificationModule();
+#endif
+#if !MESHTASTIC_EXCLUDE_DIRECTMESSAGEREPLY
+        DirectMessageReplyModule::getInstance();
 #endif
 #if !MESHTASTIC_EXCLUDE_DROPZONE
     dropzoneModule = new DropzoneModule();
