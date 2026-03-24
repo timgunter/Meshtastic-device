@@ -2,6 +2,14 @@
 
 #include <string>
 
+#pragma push_macro("abs")
+#pragma push_macro("round")
+#undef abs
+#undef round
+#include <chrono> // Include here so that <cmath>'s round() macro doesn't conflict with std::chrono::round
+#pragma pop_macro( "abs")
+#pragma pop_macro( "round")
+
 #include "SinglePortModule.h"
 #include "Singleton.h"
 #include "mesh/generated/meshtastic/mesh.pb.h"
